@@ -170,13 +170,21 @@ def _gen_season(year: int) -> pd.DataFrame:
 # ── Ładowanie danych ──────────────────────────────────────────────────────────
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_data(seasons: tuple[int, ...]) -> tuple[pd.DataFrame, str]:
+def load_data(seasons: tuple[int, ...], use_live: bool = False,
+              live_days_back: int = 14) -> tuple[pd.DataFrame, str]:
     """
     Wczytuje dane dla wybranych sezonów.
     Priorytety:
-      1. data/pitch_mix_RRRR.parquet  (z data_pipeline.ipynb)
-      2. pybaseball Statcast
-      3. Dane syntetyczne (zawsze dostępne)
+      1. data/pitch_mix_RRRR.parquet  (z data_pipeline.ipynb)  — zawsze próbowane, szybkie
+      2. pybaseball Statcast — TYLKO jeśli use_live=True (opt-in), i TYLKO ostatnie
+         `live_days_back` dni sezonu (nie cały sezon!)
+      3. Dane syntetyczne (zawsze dostępne, domyślny bezpieczny fallback)
+
+    v6.1 FIX: pociąganie CAŁEGO sezonu (~180 dni) na żywo z Statcast na hostingu
+    z ograniczoną pamięcią (np. darmowy Streamlit Community Cloud, ~1GB RAM) potrafiło
+    zabić proces (OOM kill = brak tracebacku, po prostu "oh no, error running app").
+    Dlatego live-fetch jest teraz: (a) opt-in, (b) ograniczony do krótkiego okna,
+    (c) dtype-downcasted żeby zmniejszyć zużycie pamięci.
     """
     frames: list[pd.DataFrame] = []
     source = "syntetyczne"
@@ -200,20 +208,37 @@ def load_data(seasons: tuple[int, ...]) -> tuple[pd.DataFrame, str]:
         return pd.concat(frames, ignore_index=True), source
 
     missing = [y for y in seasons if not Path(f"data/pitch_mix_{y}.parquet").exists()]
-    if missing:
+    if missing and use_live:
         try:
             from pybaseball import statcast, playerid_reverse_lookup  # type: ignore
             pb_frames: list[pd.DataFrame] = []
-            # v6: pull real platoon/count/velo/outcome/team columns straight from Statcast
-            # (raw statcast() output already has all of these — no synthetic proxy needed)
             raw_cols = ["game_date", "player_name", "batter", "pitch_type", "zone",
                         "p_throws", "balls", "strikes", "release_speed",
                         "description", "events", "launch_speed",
                         "home_team", "away_team", "inning_topbot"]
+
             for year in missing:
-                end_mo = "07-15" if year >= 2026 else "10-01"
-                df_pb  = statcast(start_dt=f"{year}-04-01", end_dt=f"{year}-{end_mo}")
-                df_pb  = df_pb[[c for c in raw_cols if c in df_pb.columns]].dropna(subset=["pitch_type"])
+                # v6.1: BOUNDED window instead of the full ~180-day season — this is
+                # the actual fix for the OOM crash, not just a try/except.
+                season_start = pd.Timestamp(f"{year}-04-01")
+                season_end   = pd.Timestamp(f"{year}-07-15" if year >= 2026 else f"{year}-10-01")
+                today        = pd.Timestamp.today().normalize()
+                fetch_end    = min(season_end, today)
+                fetch_start  = max(season_start, fetch_end - pd.Timedelta(days=live_days_back))
+                if fetch_start >= fetch_end:
+                    continue
+
+                try:
+                    df_pb = statcast(start_dt=fetch_start.strftime("%Y-%m-%d"),
+                                      end_dt=fetch_end.strftime("%Y-%m-%d"))
+                except Exception as e:
+                    st.warning(f"Statcast fetch failed for {year} ({fetch_start.date()}–{fetch_end.date()}): {e}")
+                    continue
+
+                if df_pb is None or df_pb.empty:
+                    continue
+
+                df_pb = df_pb[[c for c in raw_cols if c in df_pb.columns]].dropna(subset=["pitch_type"])
                 df_pb["game_date"] = pd.to_datetime(df_pb["game_date"])
                 df_pb["pitcher_name"] = df_pb["player_name"].apply(
                     lambda n: f"{n.split(',')[1].strip()} {n.split(',')[0].strip()}"
@@ -266,11 +291,15 @@ def load_data(seasons: tuple[int, ...]) -> tuple[pd.DataFrame, str]:
                 keep = ["game_date", "pitcher_name", "batter_name", "batter_team", "pitch_type", "zone",
                         "season", "p_throws", "balls", "strikes", "two_strike", "release_speed",
                         "swing", "whiff", "in_play", "exit_velo", "hit"]
-                pb_frames.append(df_pb[keep])
-            frames.extend(pb_frames)
-            source = "Statcast"
-        except Exception:
-            pass
+                pb_frames.append(_optimize_dtypes(df_pb[keep]))
+
+            if pb_frames:
+                frames.extend(pb_frames)
+                source = "Statcast (live, ostatnie dni)"
+        except ImportError:
+            st.warning("pybaseball nie jest zainstalowany — pomijam live-fetch, używam danych syntetycznych.")
+        except Exception as e:
+            st.warning(f"Live Statcast fetch nie powiódł się ({e}) — używam danych syntetycznych.")
 
     have_seasons = {int(f["season"].iloc[0]) for f in frames} if frames else set()
     for year in sorted(seasons):
@@ -284,7 +313,6 @@ def load_data(seasons: tuple[int, ...]) -> tuple[pd.DataFrame, str]:
         if col not in df_out.columns:
             df_out[col] = 5 if col == "zone" else None
 
-    # v6: backfill defaults for any source (parquet especially) missing the newer columns
     v6_defaults = {
         "batter_team": "Unknown", "p_throws": "R", "balls": np.nan, "strikes": np.nan,
         "two_strike": False, "release_speed": np.nan, "swing": False, "whiff": False,
@@ -299,4 +327,28 @@ def load_data(seasons: tuple[int, ...]) -> tuple[pd.DataFrame, str]:
     df_out["zone"] = pd.to_numeric(df_out["zone"], errors="coerce").fillna(5).astype(int)
     df_out = df_out.dropna(subset=["pitcher_name", "batter_name", "pitch_type"])
 
-    return df_out, source
+    return _optimize_dtypes(df_out), source
+
+
+def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """v6.1: downcast NUMERIC dtypes to reduce memory footprint on constrained hosting.
+    NOTE: deliberately does NOT convert name/team/pitch_type columns to 'category' —
+    those get string-concatenated (e.g. batter_name + ' · ' + week_label) all over
+    compute.py/ui_components.py, and pandas Categorical doesn't support + with str."""
+    df = df.copy()
+    float_cols = ["release_speed", "exit_velo"]
+    for c in float_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
+    if "zone" in df.columns:
+        df["zone"] = pd.to_numeric(df["zone"], errors="coerce").fillna(5).astype("int16")
+    if "season" in df.columns:
+        df["season"] = pd.to_numeric(df["season"], errors="coerce").astype("int16")
+    for c in ("balls", "strikes"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    bool_cols = ["two_strike", "swing", "whiff", "in_play", "hit"]
+    for c in bool_cols:
+        if c in df.columns:
+            df[c] = df[c].fillna(False).astype(bool)
+    return df

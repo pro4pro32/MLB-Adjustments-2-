@@ -16,6 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from i18n import T, get_lang
 from config import (
     AXIS_STYLE, CAT_COLS, CAT_COLORS, CAT_LABELS,
     AVAILABLE_SEASONS, BATTERS, ALL_CATEGORIES, PITCH_CATEGORIES,
@@ -73,48 +74,50 @@ def themed_rot(fig: go.Figure, angle: int = -30, **layout_kw: Any) -> go.Figure:
 class SidebarFilters:
     """Renderuje sidebar i przechowuje wartości filtrów."""
 
-    def __init__(self, raw_df: pd.DataFrame) -> None:
-        self._render(raw_df)
+    def __init__(self, raw_df: pd.DataFrame, lang: str | None = None) -> None:
+        self._render(raw_df, lang)
 
-    def _render(self, raw_df: pd.DataFrame) -> None:
+    def _render(self, raw_df: pd.DataFrame, lang: str | None = None) -> None:
         with st.sidebar:
-            st.markdown("### ⚾ Pitch Mix Analyzer")
+            st.markdown(T("sidebar_app_name", lang=lang))
 
-            st.markdown("### 📅 Sezony")
+            st.markdown(T("sidebar_seasons_header", lang=lang))
             self.seasons: list[int] = st.multiselect(
-                "Sezony", AVAILABLE_SEASONS, default=[2025, 2026],
+                T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2025, 2026],
                 label_visibility="collapsed",
             )
             if not self.seasons:
                 self.seasons = [2026]
 
-            st.markdown("### 📆 Zakres dat")
+            st.markdown(T("sidebar_date_header", lang=lang))
             min_d = raw_df["game_date"].min().date()
             max_d = raw_df["game_date"].max().date()
 
+            preset_options = [T("sidebar_preset_month", lang=lang), T("sidebar_preset_8wk", lang=lang),
+                               T("sidebar_preset_season", lang=lang), T("sidebar_preset_custom", lang=lang)]
             preset = st.radio(
-                "Preset", ["Bieżący miesiąc", "Ostatnie 8 tyg.", "Pełny sezon", "Własny"],
+                "Preset", preset_options,
                 horizontal=False, label_visibility="collapsed",
                 index=3,
             )
             import datetime
             today = max_d
-            if preset == "Bieżący miesiąc":
+            if preset == preset_options[0]:
                 d_s = today.replace(day=1)
                 d_e = today
-            elif preset == "Ostatnie 8 tyg.":
+            elif preset == preset_options[1]:
                 d_s = today - datetime.timedelta(weeks=8)
                 d_e = today
-            elif preset == "Pełny sezon":
+            elif preset == preset_options[2]:
                 d_s = min_d
                 d_e = max_d
             else:
                 cols = st.columns(2)
                 with cols[0]:
-                    d_s = st.date_input("Od", value=min_d, min_value=min_d,
+                    d_s = st.date_input(T("sidebar_date_from", lang=lang), value=min_d, min_value=min_d,
                                         max_value=max_d, label_visibility="visible")
                 with cols[1]:
-                    d_e = st.date_input("Do", value=max_d, min_value=min_d,
+                    d_e = st.date_input(T("sidebar_date_to", lang=lang), value=max_d, min_value=min_d,
                                         max_value=max_d, label_visibility="visible")
 
             self.d_start = max(d_s, min_d)
@@ -122,44 +125,44 @@ class SidebarFilters:
             if self.d_start > self.d_end:
                 self.d_start, self.d_end = self.d_end, self.d_start
 
-            st.markdown("### 🎯 Progi")
+            st.markdown(T("sidebar_thresholds_header", lang=lang))
             self.min_pitches: int = st.slider(
-                "Min. narzutów / tydzień",    5, 80, 15, 5)
+                T("sidebar_min_pitches", lang=lang), 5, 80, 15, 5)
             self.min_prev: int    = st.slider(
-                "Min. narzutów poprz. tydz.", 5, 80, 10, 5)
+                T("sidebar_min_prev", lang=lang), 5, 80, 10, 5)
 
-            st.markdown("### 🔍 Filtruj graczy")
+            st.markdown(T("sidebar_players_header", lang=lang))
             all_pitchers = sorted(raw_df["pitcher_name"].dropna().unique())
             all_batters  = sorted(raw_df["batter_name"].dropna().unique())
 
-            pitcher_q = st.text_input("Szukaj pitcher", placeholder="np. Cole…",
+            pitcher_q = st.text_input(T("sidebar_search_pitcher", lang=lang), placeholder=T("sidebar_search_pitcher", lang=lang),
                                       label_visibility="collapsed")
             filt_p = [p for p in all_pitchers if pitcher_q.lower() in p.lower()] \
                      if pitcher_q else all_pitchers
             self.sel_pitchers: list[str] = st.multiselect(
-                "Pitcher", filt_p, placeholder="Wszyscy",
+                T("sidebar_pitcher_label", lang=lang), filt_p, placeholder=T("sidebar_all_pitchers", lang=lang),
                 label_visibility="collapsed", key="sb_pitchers",
             )
 
-            batter_q = st.text_input("Szukaj batter", placeholder="np. Alvarez…",
+            batter_q = st.text_input(T("sidebar_search_batter", lang=lang), placeholder=T("sidebar_search_batter", lang=lang),
                                      label_visibility="collapsed")
             filt_b = [b for b in all_batters if batter_q.lower() in b.lower()] \
                      if batter_q else all_batters
             self.sel_batters: list[str] = st.multiselect(
-                "Batter", filt_b, placeholder="Wszyscy",
+                T("sidebar_batter_label", lang=lang), filt_b, placeholder=T("sidebar_all_batters", lang=lang),
                 label_visibility="collapsed", key="sb_batters",
             )
 
-            st.markdown("### 🎳 Pitch type")
+            st.markdown(T("sidebar_pitchtype_header", lang=lang))
             avail_pt = sorted(raw_df["pitch_type"].dropna().unique())
             self.sel_pt: list[str] = st.multiselect(
-                "Pitch type", avail_pt,
+                T("sidebar_pitchtype_label", lang=lang), avail_pt,
                 format_func=lambda x: f"{x} – {PITCH_TYPES.get(x, x)}",
-                placeholder="Wszystkie", label_visibility="collapsed",
+                placeholder=T("sidebar_pitchtype_all", lang=lang), label_visibility="collapsed",
             )
 
             st.divider()
-            st.caption("Demo: dane syntetyczne.\nPodmień na `data/pitch_mix_RRRR.parquet`.")
+            st.caption(T("sidebar_footer_caption", lang=lang))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +187,8 @@ def section(title: str) -> None:
     st.markdown(f'<div class="section-hdr">{title}</div>', unsafe_allow_html=True)
 
 
-def empty(msg: str = "Brak danych dla wybranych filtrów.") -> None:
+def empty(msg: str | None = None) -> None:
+    msg = msg if msg is not None else T("empty_default")
     st.markdown(
         f'<div class="empty-state"><span class="icon">⚾</span>{msg}</div>',
         unsafe_allow_html=True,
@@ -209,7 +213,7 @@ def export_csv(df: pd.DataFrame, filename: str, label: str = "⬇ CSV") -> None:
 #  CHART: Pitch-type trend (FB%/BB%/OS%) — główny wykres profilu pałkarza
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_batter_trend(bw: pd.DataFrame, batter: str) -> go.Figure:
+def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Line chart: FB%/BB%/OS% per week dla jednego battera."""
     sub = bw[bw["batter_name"] == batter].sort_values("week_start")
 
@@ -236,15 +240,15 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str) -> go.Figure:
 
     return themed(
         fig, height=380,
-        title=f"Tygodniowy mix (pitch type) rzucony do: {batter}",
-        xaxis_title="Tydzień", yaxis_title="Udział (%)",
+        title=T("chart_trend_title", lang=lang, batter=batter),
+        xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
                     font=dict(size=11, color="#c9d1d9")),
     )
 
 
-def chart_batter_delta_bars(bd: pd.DataFrame, batter: str) -> go.Figure:
+def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Grouped bar chart: zmiana FB%/BB%/OS% tydzień do tygodnia."""
     sub = bd[bd["batter_name"] == batter].sort_values("week_start")
     if sub.empty:
@@ -264,13 +268,13 @@ def chart_batter_delta_bars(bd: pd.DataFrame, batter: str) -> go.Figure:
 
     return themed(
         fig, height=300, barmode="group",
-        title=f"Zmiany tydzień-do-tygodnia (pitch type) · {batter}",
-        xaxis_title="Tydzień", yaxis_title="Δ (pp)",
+        title=T("chart_delta_title", lang=lang, batter=batter),
+        xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_delta_pp", lang=lang),
         bargap=0.15, bargroupgap=0.05,
     )
 
 
-def chart_batter_heatmap(bw: pd.DataFrame, batter: str) -> go.Figure:
+def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Heatmapa tygodnie × FB%/BB%/OS%."""
     sub = bw[bw["batter_name"] == batter].sort_values("week_start")
     if sub.empty:
@@ -293,7 +297,7 @@ def chart_batter_heatmap(bw: pd.DataFrame, batter: str) -> go.Figure:
                       thickness=12, len=0.8),
     ))
     themed_rot(fig, angle=-30, height=220,
-               title=f"Heatmapa pitch mix · {batter}", xaxis_title="", yaxis_title="")
+               title=T("chart_heatmap_title", lang=lang, batter=batter), xaxis_title="", yaxis_title="")
     return fig
 
 
@@ -317,7 +321,7 @@ def _zone_grid_values(values_by_zone: dict[int, float]) -> tuple[np.ndarray, lis
 
 
 def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame] = None,
-                        mode: str = "delta") -> go.Figure:
+                        mode: str = "delta", lang: str | None = None) -> go.Figure:
     """
     Rysuje strefy Statcast w kształcie diamentu:
         11      12
@@ -342,7 +346,7 @@ def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame]
             values_by_zone = {z: last.get(f"d_zone{z}", np.nan) for z in
                               [1,2,3,4,5,6,7,8,9,11,12,13,14]}
             wk_label = str(last["week_label"]).replace("\n", " ").replace("·", "").strip()
-            title = f"Zmiana % rzutów per strefa (Δ pp) · {batter} · {wk_label}"
+            title = T("chart_zone_delta_title", lang=lang, batter=batter, week=wk_label)
             zmin, zmax, colorscale = -25, 25, [
                 [0, "#f85149"], [0.5, "#161b22"], [1, "#39d353"],
             ]
@@ -352,7 +356,7 @@ def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame]
         values_by_zone = {z: last.get(f"zone{z}_pct", np.nan) for z in
                           [1,2,3,4,5,6,7,8,9,11,12,13,14]}
         wk_label = str(last["week_label"]).replace("\n", " ").replace("·", "").strip()
-        title = f"% rzutów per strefa · {batter} · {wk_label}"
+        title = T("chart_zone_level_title", lang=lang, batter=batter, week=wk_label)
         zmin, zmax, colorscale = 0, 20, [
             [0, "#0d1117"], [0.4, "#1a3a5c"], [0.7, "#ff6b35"], [1, "#ffd166"],
         ]
@@ -381,7 +385,7 @@ def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame]
 #  CHART: Adjustment Score ranking
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15) -> go.Figure:
+def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15, lang: str | None = None) -> go.Figure:
     rank = (
         bd.groupby("batter_name")["adj_score"]
           .max().sort_values(ascending=True).tail(top_n).reset_index()
@@ -397,7 +401,7 @@ def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15) -> go.Figure:
         hovertemplate="<b>%{y}</b><br>Adj. Score: %{x:.1f}<extra></extra>",
     ))
     return themed(fig, height=max(340, top_n * 30),
-                  title="Ranking: Adjustment Score (śr. |Δ| po wszystkich 16 kategoriach)",
+                  title=T("chart_adjrank_title", lang=lang),
                   xaxis_title="Adjustment Score", yaxis_title="", margin=dict(r=80))
 
 
@@ -405,7 +409,7 @@ def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15) -> go.Figure:
 #  CHART: Biggest Movers leaderboard (NOWE — "did you know" ranking)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_biggest_movers(lb: pd.DataFrame) -> go.Figure:
+def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure:
     """
     Leaderboard: dla każdego battera×tygodnia jego NAJWIĘKSZA pojedyncza zmiana
     (dowolna z 16 kategorii — pitch-type lub zone). To jest sedno funkcji
@@ -432,51 +436,49 @@ def chart_biggest_movers(lb: pd.DataFrame) -> go.Figure:
         customdata=bar[["top_mover_label", "total"]].values,
     ))
     return themed(fig, height=max(380, len(bar) * 34),
-                  title="Największe pojedyncze zmiany — dowolna z 16 kategorii (pitch-type + strefy)",
-                  xaxis_title="Δ (pp)", yaxis_title="", margin=dict(r=140))
+                  title=T("chart_movers_title", lang=lang),
+                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=140))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SHAREABLE PLAYER REPORT CARD (NOWE)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_share_card(batter: str, headline: dict) -> None:
+def render_share_card(batter: str, headline: dict, lang: str | None = None) -> None:
     """
     Renderuje 'shareable' kartę do wysłania graczowi/drużynie:
     'Did you know you were the hitter with the biggest change in X this week?'
     v6: dodaje outcome context (whiff%/BA), reliability i platoon confound note.
+    v6.2: language-aware.
     """
-    direction_word = "wzrost" if headline["delta"] > 0 else "spadek"
+    direction_word = T("share_direction_up", lang=lang) if headline["delta"] > 0 else T("share_direction_down", lang=lang)
     sign = "+" if headline["delta"] > 0 else ""
-    rel_note = "" if headline.get("reliable", True) else \
-        '<br><span style="color:#e3b341">⚠️ Mała próba w tym tygodniu — traktuj ostrożnie.</span>'
+    rel_note = "" if headline.get("reliable", True) else T("share_low_sample", lang=lang)
 
     outcome_bits = []
     if "whiff_pct" in headline:
-        outcome_bits.append(f"Whiff%: {headline['whiff_pct']:.1f}%")
+        outcome_bits.append(T("share_whiff_label", lang=lang, v=headline["whiff_pct"]))
     if "ba_proxy" in headline:
-        outcome_bits.append(f"BA (proxy): {headline['ba_proxy']:.3f}")
+        outcome_bits.append(T("share_ba_label", lang=lang, v=headline["ba_proxy"]))
     outcome_line = " &nbsp;·&nbsp; ".join(outcome_bits)
 
-    confound_note = ""
-    if headline.get("platoon_confound_flag"):
-        confound_note = ('<br><span style="color:#e3b341">⚠️ Duża zmiana w % rzutów vs LHP w tym '
-                         'tygodniu — część zmiany może wynikać z innego matchupu, nie z adjustmentu.</span>')
+    confound_note = T("share_confound", lang=lang) if headline.get("platoon_confound_flag") else ""
+
+    eyebrow  = T("share_eyebrow", lang=lang, week=headline["week_label"])
+    headline_html = T("share_headline", lang=lang, sign=sign, delta=headline["delta"],
+                       direction=direction_word, category=headline["category_label"])
+    meta = T("share_meta", lang=lang, adj=headline["adj_score"], total=headline["total"])
 
     html = f"""
     <div class="share-card">
-        <div class="sc-eyebrow">⚾ Pitch Mix Report · {headline['week_label']}</div>
+        <div class="sc-eyebrow">{eyebrow}</div>
         <div class="sc-name">{batter}</div>
         <div class="sc-headline">
-            Czy wiesz, że byłeś pałkarzem z największą zmianą podejścia pitcherów
-            w tym tygodniu? Rzucono do Ciebie
-            <b>{sign}{headline['delta']:.1f} pp {direction_word}</b> udziału
-            <b>{headline['category_label']}</b> względem poprzedniego tygodnia.
+            {headline_html}
             {rel_note}{confound_note}
         </div>
         <div class="sc-meta">
-            Adjustment Score: {headline['adj_score']:.1f} &nbsp;·&nbsp;
-            Pitchy w tygodniu: {headline['total']}
+            {meta}
             {" &nbsp;·&nbsp; " + outcome_line if outcome_line else ""}
         </div>
     </div>
@@ -488,7 +490,7 @@ def render_share_card(batter: str, headline: dict) -> None:
 #  CHART: Comparison – dowolna kategoria (pitch-type LUB zone) dla 2-4 batters
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str) -> go.Figure:
+def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str, lang: str | None = None) -> go.Figure:
     label = ALL_CATEGORIES[cat_col]["short"]
     full  = ALL_CATEGORIES[cat_col]["label"]
     colors_comp = ["#ff6b35", "#4cc9f0", "#39d353", "#bc8cff"]
@@ -505,8 +507,8 @@ def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str) -> go.F
             hovertemplate=f"<b>{b}</b><br>Tydzień: %{{x}}<br>{label}: %{{y:.1f}}%<extra></extra>",
         ))
 
-    themed(fig, height=340, title=f"Porównanie: {full}",
-           xaxis_title="Tydzień", yaxis_title=f"{label} (%)", hovermode="x unified")
+    themed(fig, height=340, title=T("chart_compare_title", lang=lang, full=full),
+           xaxis_title=T("axis_week", lang=lang), yaxis_title=f"{label} (%)", hovermode="x unified")
     return fig
 
 
@@ -514,7 +516,7 @@ def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str) -> go.F
 #  CHART: Matchup line + heatmap (bez zmian — nadal per pitch type)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str) -> go.Figure:
+def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | None = None) -> go.Figure:
     sub = mw[(mw["pitcher_name"] == pitcher) & (mw["batter_name"] == batter)].sort_values("week_start")
 
     fig = go.Figure()
@@ -529,12 +531,12 @@ def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str) -> go.Figure
                           "%: %{y:.1f}%<br>Total pitchy: %{customdata[2]}<extra></extra>"),
         ))
 
-    themed(fig, height=360, title=f"{pitcher} → {batter}: pitch mix per tydzień",
-           xaxis_title="Tydzień", yaxis_title="Udział (%)", hovermode="x unified")
+    themed(fig, height=360, title=T("chart_matchup_line_title", lang=lang, pitcher=pitcher, batter=batter),
+           xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang), hovermode="x unified")
     return fig
 
 
-def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str) -> go.Figure:
+def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | None = None) -> go.Figure:
     sub = mw[(mw["pitcher_name"] == pitcher) & (mw["batter_name"] == batter)].sort_values("week_start")
 
     pivot = (sub.pivot_table(index="pitch_type", columns="week_label_short", values="pitch_pct", aggfunc="sum")
@@ -552,7 +554,7 @@ def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str) -> go.Fig
         colorbar=dict(thickness=10, title="%", tickfont=dict(color="#7d8590"), title_font=dict(color="#7d8590")),
     ))
     themed_rot(fig, angle=-30, height=max(240, len(pivot) * 48 + 80),
-               title=f"Heatmapa: {pitcher} → {batter}", xaxis_title="", yaxis_title="")
+               title=T("chart_matchup_heatmap_title", lang=lang, pitcher=pitcher, batter=batter), xaxis_title="", yaxis_title="")
     return fig
 
 
@@ -560,7 +562,7 @@ def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str) -> go.Fig
 #  CHART: Biggest matchup changes (Tab Zmiany) — bez zmian
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20) -> go.Figure:
+def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20, lang: str | None = None) -> go.Figure:
     if md.empty:
         return go.Figure()
     bar = md.head(top_n).copy()
@@ -582,15 +584,15 @@ def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20) -> go.Figure:
         ),
     ))
     return themed(fig, height=max(420, top_n * 27),
-                  title=f"Top {top_n} zmian pitch mix (pitcher → batter)",
-                  xaxis_title="Δ (pp)", yaxis_title="", margin=dict(r=160))
+                  title=T("chart_changes_title", lang=lang, n=top_n),
+                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=160))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  v6 CHART: Outcome overlay — czy zmiana pitch-mix faktycznie zadziałała?
 # ─────────────────────────────────────────────────────────────────────────────
 
-def chart_outcome_trend(bd: pd.DataFrame, batter: str) -> go.Figure:
+def chart_outcome_trend(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Whiff% i BA(proxy) w czasie + Adjustment Score jako tło (bar), żeby
     zobaczyć czy tygodnie z dużym adjustmentem pokrywają się ze zmianą wyników."""
     sub = bd[bd["batter_name"] == batter].sort_values("week_start")
@@ -618,15 +620,15 @@ def chart_outcome_trend(bd: pd.DataFrame, batter: str) -> go.Figure:
         ))
 
     fig = themed(fig, height=340,
-                 title=f"Outcome overlay · {batter} — czy adjustment pitcherów zadziałał?",
-                 xaxis_title="Tydzień", yaxis_title="% (whiff / BA×100)",
+                 title=T("chart_outcome_title", lang=lang, batter=batter),
+                 xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_outcome_pct", lang=lang),
                  hovermode="x unified",
                  yaxis2=dict(overlaying="y", side="right", title="Adj. Score",
                              showgrid=False, tickfont=dict(color="#7d8590")))
     return fig
 
 
-def chart_platoon_context(bd: pd.DataFrame, batter: str) -> go.Figure:
+def chart_platoon_context(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """% rzutów widzianych vs LHP per tydzień — do wykrywania confoundów."""
     sub = bd[bd["batter_name"] == batter].sort_values("week_start")
     if sub.empty or "pct_vs_lhp" not in sub.columns:
@@ -640,13 +642,13 @@ def chart_platoon_context(bd: pd.DataFrame, batter: str) -> go.Figure:
         hovertemplate="Tydzień: %{x}<br>%% rzutów vs LHP: %{y:.1f}%%<extra></extra>",
     ))
     fig = themed(fig, height=260,
-                 title=f"Kontekst: % rzutów widzianych vs LHP · {batter} (czerwony = duża zmiana tydz./tydz.)",
-                 xaxis_title="Tydzień", yaxis_title="% vs LHP")
+                 title=T("chart_platoon_title", lang=lang, batter=batter),
+                 xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_pct_vs_lhp", lang=lang))
     fig.update_yaxes(range=[0, 100])
     return fig
 
 
-def chart_velo_trend(velo: pd.DataFrame, batter: str) -> go.Figure:
+def chart_velo_trend(velo: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Średnia prędkość (mph) per pitch type, per tydzień — 'ten sam pitch, mocniej/słabiej'."""
     from config import PITCH_COLORS, PITCH_TYPES
     sub = velo[velo["batter_name"] == batter].sort_values("week_start")
@@ -665,11 +667,11 @@ def chart_velo_trend(velo: pd.DataFrame, batter: str) -> go.Figure:
                           "Δ vs poprz. tydz.: %{customdata[0]:+.1f} mph<br>N: %{customdata[1]}<extra></extra>"),
         ))
     return themed(fig, height=340,
-                  title=f"Prędkość rzutów per pitch type · {batter}",
-                  xaxis_title="Tydzień", yaxis_title="mph", hovermode="x unified")
+                  title=T("chart_velo_title", lang=lang, batter=batter),
+                  xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_mph", lang=lang), hovermode="x unified")
 
 
-def chart_team_rollup(team_df: pd.DataFrame) -> go.Figure:
+def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figure:
     """Bar chart: average Adjustment Score per drużyna (batter's team)."""
     if team_df.empty:
         return go.Figure()
@@ -686,11 +688,11 @@ def chart_team_rollup(team_df: pd.DataFrame) -> go.Figure:
         ),
     ))
     return themed(fig, height=max(300, len(d) * 45),
-                  title="Team rollup — średni Adjustment Score per drużyna",
-                  xaxis_title="Avg Adj. Score", yaxis_title="", margin=dict(r=80))
+                  title=T("chart_team_title", lang=lang),
+                  xaxis_title=T("axis_avg_adj_score", lang=lang), yaxis_title="", margin=dict(r=80))
 
 
-def chart_sustained_movers(df: pd.DataFrame) -> go.Figure:
+def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figure:
     """Ranking sustained trendów (streak_weeks × |cumulative_delta|) — bardziej
     wiarygodny sygnał niż pojedynczy tygodniowy skok."""
     if df.empty:
@@ -707,8 +709,8 @@ def chart_sustained_movers(df: pd.DataFrame) -> go.Figure:
         customdata=d["streak_weeks"],
     ))
     return themed(fig, height=max(360, len(d) * 32),
-                  title="Sustained Movers — trwałe (≥3 tyg.) trendy, nie pojedynczy skok",
-                  xaxis_title="Skumulowana zmiana (pp)", yaxis_title="", margin=dict(r=140))
+                  title=T("chart_sustained_title", lang=lang),
+                  xaxis_title=T("axis_cumulative_delta", lang=lang), yaxis_title="", margin=dict(r=140))
 
 
 def render_digest_block(digest_text: str) -> None:

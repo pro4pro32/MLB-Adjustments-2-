@@ -58,11 +58,11 @@ ZONE_GRID_LAYOUT: list[list[int | None]] = [
 ]
 
 ZONE_DESCRIPTIONS: dict[int, str] = {
-    1: "Góra-lewo (strefa)", 2: "Góra-środek (strefa)", 3: "Góra-prawo (strefa)",
-    4: "Środek-lewo (strefa)", 5: "Samo centrum (strefa)", 6: "Środek-prawo (strefa)",
-    7: "Dół-lewo (strefa)", 8: "Dół-środek (strefa)", 9: "Dół-prawo (strefa)",
-    11: "Góra-lewo (poza)", 12: "Góra-prawo (poza)",
-    13: "Dół-lewo (poza)", 14: "Dół-prawo (poza)",
+    1: "Top-left (in zone)", 2: "Top-middle (in zone)", 3: "Top-right (in zone)",
+    4: "Middle-left (in zone)", 5: "Dead center (in zone)", 6: "Middle-right (in zone)",
+    7: "Bottom-left (in zone)", 8: "Bottom-middle (in zone)", 9: "Bottom-right (in zone)",
+    11: "Top-left (out of zone)", 12: "Top-right (out of zone)",
+    13: "Bottom-left (out of zone)", 14: "Bottom-right (out of zone)",
 }
 
 # Wagi stref per pitch type [top, middle, low, outside] — używane do generowania danych syntetycznych
