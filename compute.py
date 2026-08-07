@@ -437,6 +437,60 @@ def biggest_movers_leaderboard(bd: pd.DataFrame, top_n: int = 15,
     return out
 
 
+def batter_week_matchup_table(mw: pd.DataFrame, batter: str, week_start) -> pd.DataFrame:
+    """
+    v6.3: 'Batter ranking, not matchup ranking' — for ONE batter in ONE week, returns
+    one row per PITCHER FACED that week (not one row per pitch type like matchup_weekly),
+    with a pitch-mix breakdown (FB%/BB%/OS%) and pitch count. This answers "what were
+    Adley Rutschman's stats against every pitcher he faced in week 1" directly, instead
+    of forcing a pitcher-first drilldown.
+    """
+    from config import PITCH_CATEGORIES
+    sub = mw[(mw["batter_name"] == batter) & (mw["week_start"] == week_start)]
+    if sub.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for pitcher, g in sub.groupby("pitcher_name"):
+        total = int(g["n"].sum())
+        if total == 0:
+            continue
+        row = {"pitcher_name": pitcher, "total": total}
+        for cat_col, info in PITCH_CATEGORIES.items():
+            cnt = g[g["pitch_type"].isin(info["types"])]["n"].sum()
+            row[cat_col] = round(cnt / total * 100, 1)
+        row["top_pitch_type"] = g.groupby("pitch_type")["n"].sum().idxmax()
+        rows.append(row)
+
+    out = pd.DataFrame(rows).sort_values("total", ascending=False).reset_index(drop=True)
+    return out
+
+
+def batter_week_rank(bd: pd.DataFrame, batter: str, week_start, use_baseline: bool = False,
+                      reliable_only: bool = True) -> dict | None:
+    """
+    v6.3: Ranks `batter`'s single biggest mover for `week_start` against EVERY OTHER
+    batter's biggest mover for that SAME week (league-wide, not just the batters
+    currently in a sidebar filter). Used to make the Player Report headline honest:
+    only claim 'you had THE biggest change' when that's actually true this week.
+    """
+    week_df = bd[bd["week_start"] == week_start].copy()
+    if reliable_only:
+        rel_col = "reliable_base" if use_baseline else "reliable"
+        if rel_col in week_df.columns:
+            week_df = week_df[week_df[rel_col]]
+    if week_df.empty:
+        return None
+    abs_col = "top_mover_base_abs" if use_baseline else "top_mover_abs"
+    week_df = week_df.sort_values(abs_col, ascending=False).reset_index(drop=True)
+    week_df["rank"] = week_df.index + 1
+    row = week_df[week_df["batter_name"] == batter]
+    if row.empty:
+        return None
+    r = int(row.iloc[0]["rank"])
+    return {"rank": r, "total": len(week_df), "is_top": r == 1}
+
+
 def latest_week_headline(bd_batter: pd.DataFrame, use_baseline: bool = False) -> dict | None:
     if bd_batter.empty:
         return None

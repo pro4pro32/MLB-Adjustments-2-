@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.2)
+# MLB Pitch Mix Dashboard (v6.4)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,46 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v6.4 — dark-theme contrast, chart visibility, spacing
+- **`.streamlit/config.toml` added** — sets an explicit dark theme (`textColor = "#f0f6fc"`) so
+  every *native* Streamlit widget (labels, dataframes, sliders, checkboxes) gets white text on
+  the dark background by default, instead of relying only on CSS overrides guessing at Streamlit's
+  internal (and frequently-changing) class names.
+- **Real bug fix, not just cosmetic**: several heatmaps (weekly pitch-mix heatmap, matchup
+  heatmap) had colorscales that ended at pure white (`#ffffff`) while using white/unset text —
+  meaning the value label became **literally invisible** on the highest-value cells. Colorscales
+  now stay bounded between a dark slate and a warm amber, with explicit dark text on top, so labels
+  stay readable across the whole range. Same fix applied to the zone diamond.
+- **Chart margins widened** across every horizontal bar chart (Biggest Movers, Sustained Movers,
+  Team Rollup, Adjustment Score ranking, Matchup Changes) so outside-positioned value labels never
+  clip or crowd the edge.
+- **Week-axis charts now rotate tick labels** (trend, delta bars, outcome overlay, platoon context,
+  velocity, comparison, matchup line) so week labels don't overlap when many weeks are in view.
+- **KPI cards**: numbers now use `tabular-nums` and a fluid `clamp()` font size instead of a fixed
+  2rem, so a long number (e.g. "148,919") shrinks to fit its card instead of overlapping the
+  neighboring card; labels/values get `text-overflow: ellipsis` as a safety net.
+- All hardcoded dim/muted chart text colors (`#7d8590`, `#c9d1d9` in text roles) bumped to a
+  brighter `#f0f6fc` for stronger contrast against the dark background.
+
+## v6.3 — full league, batter-first matchups, honest share card
+- **Whole league**: synthetic data now covers all 30 MLB teams, ~210 batters (7/team) and 55
+  pitchers, up from 6 teams / 30 batters / 18 pitchers. Team names/rosters are representative
+  real players for demo flavor, not a live roster feed — swap in real data (parquet or live) for
+  an always-current roster.
+- **Batter × Week tab (was "Matchup Detail")**: this used to force picking a pitcher first, then a
+  batter. It's now batter-first: pick a batter and a week, and see a table of **every pitcher
+  they faced that week** with each one's pitch mix — e.g. "what were Adley Rutschman's stats
+  across all matchups in week 1." The old single-pitcher trend-across-weeks view still exists,
+  now inside an optional "drill into one pitcher" expander.
+- **Honest Player Report headline**: the "did you know you had the biggest change in the league"
+  card previously showed that framing for *every* selected player regardless of whether it was
+  true — it only ever reflected that player's own biggest category change, never actually checked
+  against the rest of the league. It now computes the player's real league-wide rank for that week
+  (`compute.batter_week_rank`, scored against every batter league-wide, ignoring any sidebar name
+  filter) and only uses the superlative phrasing when they're genuinely #1 — otherwise it states
+  their honest rank (e.g. "#5 of 142 qualifying hitters") or a neutral framing if not enough data
+  exists to rank them confidently.
 
 ## v6.1 — crash fix for hosted deployments
 - **Root cause of the "oh no, error running app" crash:** live Statcast fetching used to run

@@ -112,7 +112,7 @@ CAT_COLORS      = {k: v["color"] for k, v in ALL_CATEGORIES.items()}
 # Zachowane dla wstecznej zgodności z istniejącym kodem (Tab Rankingi per-kategoria itp.)
 PITCH_CATEGORIES_LEGACY = PITCH_CATEGORIES
 
-# ── Profile pitcherów ────────────────────────────────────────────────────────
+# ── Profile pitcherów (v6.3: pełna liga, ~55 starterów) ──────────────────────
 PITCHER_PROFILES: dict[str, dict] = {
     "Gerrit Cole":      {"primary": "FF", "secondary": ["SL", "CH", "KC"]},
     "Sandy Alcantara":  {"primary": "SI", "secondary": ["SL", "CH", "FF"]},
@@ -132,19 +132,112 @@ PITCHER_PROFILES: dict[str, dict] = {
     "Kodai Senga":      {"primary": "FS", "secondary": ["FF", "CU", "ST"]},
     "Tarik Skubal":     {"primary": "FF", "secondary": ["CH", "SL", "CU"]},
     "Chris Sale":       {"primary": "FF", "secondary": ["SL", "CH", "CU"]},
+    "Grayson Rodriguez":{"primary": "FF", "secondary": ["SL", "CH", "CU"]},
+    "Zach Eflin":       {"primary": "FF", "secondary": ["FC", "CU", "CH"]},
+    "Tanner Houck":     {"primary": "SI", "secondary": ["SL", "ST", "CU"]},
+    "Brayan Bello":     {"primary": "SI", "secondary": ["CH", "CU", "SL"]},
+    "Carlos Rodon":     {"primary": "FF", "secondary": ["SL", "CH"]},
+    "Marcus Stroman":   {"primary": "SI", "secondary": ["SL", "CH", "CU"]},
+    "Shane McClanahan": {"primary": "FF", "secondary": ["CU", "CH", "SL"]},
+    "Jose Berrios":     {"primary": "FF", "secondary": ["CU", "SI", "CH"]},
+    "Aaron Nola":       {"primary": "FF", "secondary": ["CU", "CH", "SI"]},
+    "Garrett Crochet":  {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Michael Kopech":   {"primary": "FF", "secondary": ["SL", "CH"]},
+    "Nick Lodolo":      {"primary": "FF", "secondary": ["CU", "CH", "SL"]},
+    "Hunter Greene":    {"primary": "FF", "secondary": ["SL", "CH"]},
+    "Freddy Peralta":   {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Ranger Suarez":    {"primary": "SI", "secondary": ["CH", "CU", "SL"]},
+    "Mitch Keller":     {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Sonny Gray":       {"primary": "FF", "secondary": ["SL", "CU", "SI"]},
+    "Bailey Ober":      {"primary": "FF", "secondary": ["SL", "CH", "CU"]},
+    "Jesus Luzardo":    {"primary": "FF", "secondary": ["SL", "CH"]},
+    "Justin Verlander": {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Cristopher Sanchez":{"primary": "SI", "secondary": ["CH", "SL"]},
+    "Tyler Glasnow":    {"primary": "FF", "secondary": ["CU", "SL", "CH"]},
+    "Yusei Kikuchi":    {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "George Kirby":     {"primary": "FF", "secondary": ["SL", "CH", "CU"]},
+    "Bryce Miller":     {"primary": "FF", "secondary": ["SL", "SI", "CH"]},
+    "Nathan Eovaldi":   {"primary": "FF", "secondary": ["SL", "CU", "SI"]},
+    "Jack Flaherty":    {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Zac Gallen":       {"primary": "FF", "secondary": ["CU", "CH", "SL"]},
+    "Merrill Kelly":    {"primary": "SL", "secondary": ["FF", "CU", "CH"]},
+    "Kyle Freeland":    {"primary": "SI", "secondary": ["SL", "CH", "CU"]},
+    "German Marquez":   {"primary": "FF", "secondary": ["SL", "CU", "CH"]},
+    "Yoshinobu Yamamoto":{"primary": "FF", "secondary": ["SL", "CU", "FS"]},
+    "Tony Gonsolin":    {"primary": "FF", "secondary": ["SL", "SI", "CH"]},
+    "Joe Musgrove":     {"primary": "FF", "secondary": ["SL", "CH", "CU"]},
+    "Jared Jones":      {"primary": "FF", "secondary": ["SL", "CH"]},
+    "Logan Webb":       {"primary": "SI", "secondary": ["CH", "SL", "FC"]},
+    "Robbie Ray":       {"primary": "FF", "secondary": ["SL", "CH"]},
 }
 
-BATTERS: list[str] = [
-    "Freddie Freeman", "Mookie Betts", "Ronald Acuna Jr.", "Corey Seager",
-    "Trea Turner", "Jose Ramirez", "Yordan Alvarez", "Kyle Tucker",
-    "Juan Soto", "Pete Alonso", "Michael Harris II", "Austin Riley",
-    "Nolan Arenado", "Paul Goldschmidt", "William Contreras",
-    "Bo Bichette", "Vladimir Guerrero Jr.", "Matt Olson",
-    "Gunnar Henderson", "Adley Rutschman", "Julio Rodriguez",
-    "Steven Kwan", "Elly De La Cruz", "Jackson Merrill",
-    "Jackson Chourio", "Francisco Lindor", "Bryce Harper",
-    "CJ Abrams", "Spencer Torkelson", "Adolis Garcia",
-]
+# ── v6.3: Pełna liga — 30 drużyn MLB, ~7 batterów per drużyna (~210 łącznie) ─
+TEAM_ROSTERS: dict[str, list[str]] = {
+    "Baltimore Orioles":     ["Adley Rutschman", "Gunnar Henderson", "Ryan Mountcastle", "Anthony Santander",
+                                "Cedric Mullins", "Jordan Westburg", "Colton Cowser"],
+    "Boston Red Sox":        ["Rafael Devers", "Trevor Story", "Jarren Duran", "Wilyer Abreu",
+                                "Triston Casas", "Masataka Yoshida", "Ceddanne Rafaela"],
+    "New York Yankees":      ["Aaron Judge", "Giancarlo Stanton", "Anthony Volpe", "Austin Wells",
+                                "Jazz Chisholm Jr.", "Gleyber Torres", "Alex Verdugo"],
+    "Tampa Bay Rays":        ["Yandy Diaz", "Jose Siri", "Brandon Lowe", "Isaac Paredes",
+                                "Josh Lowe", "Junior Caminero", "Richie Palacios"],
+    "Toronto Blue Jays":     ["Vladimir Guerrero Jr.", "Bo Bichette", "George Springer", "Daulton Varsho",
+                                "Alejandro Kirk", "Ernie Clement", "Addison Barger"],
+    "Chicago White Sox":     ["Luis Robert Jr.", "Andrew Vaughn", "Gavin Sheets", "Zach Remillard",
+                                "Nicky Lopez", "Braden Shewmake", "Lenyn Sosa"],
+    "Cleveland Guardians":   ["Jose Ramirez", "Steven Kwan", "Josh Naylor", "Andres Gimenez",
+                                "Bo Naylor", "Kyle Manzardo", "Tyler Freeman"],
+    "Detroit Tigers":        ["Riley Greene", "Spencer Torkelson", "Kerry Carpenter", "Colt Keith",
+                                "Javier Baez", "Matt Vierling", "Parker Meadows"],
+    "Kansas City Royals":    ["Bobby Witt Jr.", "Salvador Perez", "Vinnie Pasquantino", "MJ Melendez",
+                                "Maikel Garcia", "Michael Massey", "Hunter Renfroe"],
+    "Minnesota Twins":       ["Byron Buxton", "Carlos Correa", "Royce Lewis", "Ryan Jeffers",
+                                "Matt Wallner", "Willi Castro", "Trevor Larnach"],
+    "Houston Astros":        ["Jose Altuve", "Yordan Alvarez", "Alex Bregman", "Kyle Tucker",
+                                "Yainer Diaz", "Jeremy Pena", "Chas McCormick"],
+    "Los Angeles Angels":    ["Mike Trout", "Anthony Rendon", "Taylor Ward", "Logan O'Hoppe",
+                                "Zach Neto", "Jo Adell", "Nolan Schanuel"],
+    "Athletics":             ["Brent Rooker", "Zack Gelof", "JJ Bleday", "Shea Langeliers",
+                                "Lawrence Butler", "Tyler Soderstrom", "Seth Brown"],
+    "Seattle Mariners":      ["Julio Rodriguez", "Cal Raleigh", "J.P. Crawford", "Josh Rojas",
+                                "Mitch Garver", "Luke Raley", "Victor Robles"],
+    "Texas Rangers":         ["Corey Seager", "Marcus Semien", "Adolis Garcia", "Josh Jung",
+                                "Wyatt Langford", "Jonah Heim", "Ezequiel Duran"],
+    "Atlanta Braves":        ["Ronald Acuna Jr.", "Austin Riley", "Matt Olson", "Ozzie Albies",
+                                "Sean Murphy", "Michael Harris II", "Orlando Arcia"],
+    "Miami Marlins":         ["Jesus Sanchez", "Jake Burger", "Xavier Edwards", "Connor Norby",
+                                "Griffin Conine", "Nick Fortes", "Kyle Stowers"],
+    "New York Mets":         ["Juan Soto", "Francisco Lindor", "Pete Alonso", "Brandon Nimmo",
+                                "Mark Vientos", "Francisco Alvarez", "Starling Marte"],
+    "Philadelphia Phillies": ["Bryce Harper", "Trea Turner", "Kyle Schwarber", "Alec Bohm",
+                                "J.T. Realmuto", "Nick Castellanos", "Bryson Stott"],
+    "Washington Nationals":  ["CJ Abrams", "James Wood", "Luis Garcia Jr.", "Keibert Ruiz",
+                                "Jacob Young", "Joey Meneses", "Alex Call"],
+    "Chicago Cubs":          ["Seiya Suzuki", "Dansby Swanson", "Ian Happ", "Nico Hoerner",
+                                "Michael Busch", "Christopher Morel", "Cody Bellinger"],
+    "Cincinnati Reds":       ["Elly De La Cruz", "Spencer Steer", "Matt McLain", "TJ Friedl",
+                                "Christian Encarnacion-Strand", "Jonathan India", "Jeimer Candelario"],
+    "Milwaukee Brewers":     ["William Contreras", "Christian Yelich", "Willy Adames", "Jackson Chourio",
+                                "Brice Turang", "Sal Frelick", "Rhys Hoskins"],
+    "Pittsburgh Pirates":    ["Oneil Cruz", "Bryan Reynolds", "Ke'Bryan Hayes", "Joey Bart",
+                                "Jack Suwinski", "Nick Gonzales", "Andrew McCutchen"],
+    "St. Louis Cardinals":   ["Nolan Arenado", "Paul Goldschmidt", "Willson Contreras", "Masyn Winn",
+                                "Brendan Donovan", "Lars Nootbaar", "Alec Burleson"],
+    "Arizona Diamondbacks":  ["Corbin Carroll", "Ketel Marte", "Christian Walker", "Gabriel Moreno",
+                                "Eugenio Suarez", "Lourdes Gurriel Jr.", "Jake McCarthy"],
+    "Colorado Rockies":      ["Ryan McMahon", "Ezequiel Tovar", "Brenton Doyle", "Elias Diaz",
+                                "Charlie Blackmon", "Nolan Jones", "Michael Toglia"],
+    "Los Angeles Dodgers":   ["Shohei Ohtani", "Mookie Betts", "Freddie Freeman", "Will Smith",
+                                "Teoscar Hernandez", "Max Muncy", "Tommy Edman"],
+    "San Diego Padres":      ["Fernando Tatis Jr.", "Manny Machado", "Xander Bogaerts", "Jackson Merrill",
+                                "Luis Arraez", "Jake Cronenworth", "Jurickson Profar"],
+    "San Francisco Giants":  ["Matt Chapman", "Jung Hoo Lee", "Heliot Ramos", "Patrick Bailey",
+                                "Wilmer Flores", "Tyler Fitzgerald", "LaMonte Wade Jr."],
+}
+
+TEAMS: list[str] = list(TEAM_ROSTERS.keys())
+BATTERS: list[str] = [b for roster in TEAM_ROSTERS.values() for b in roster]
+TEAM_OF_BATTER: dict[str, str] = {b: team for team, roster in TEAM_ROSTERS.items() for b in roster}
 
 INACTIVE_BY_SEASON: dict[int, set[str]] = {
     2024: {"Wander Franco"},
@@ -155,22 +248,12 @@ INACTIVE_BY_SEASON: dict[int, set[str]] = {
 AVAILABLE_SEASONS: list[int] = [2022, 2023, 2024, 2025, 2026]
 
 # ── v6: Pitcher handedness (dla platoon splits: vs LHP / vs RHP) ─────────────
-PITCHER_THROWS: dict[str, str] = {
-    "Gerrit Cole": "R", "Sandy Alcantara": "R", "Spencer Strider": "R",
-    "Zack Wheeler": "R", "Kevin Gausman": "R", "Pablo Lopez": "R",
-    "Corbin Burnes": "R", "Framber Valdez": "L", "Logan Gilbert": "R",
-    "Luis Castillo": "R", "Yu Darvish": "R", "Max Fried": "L",
-    "Dylan Cease": "R", "Shane Bieber": "R", "Shohei Ohtani": "R",
-    "Kodai Senga": "R", "Tarik Skubal": "L", "Chris Sale": "L",
+_LEFTIES = {
+    "Framber Valdez", "Max Fried", "Tarik Skubal", "Chris Sale", "Yusei Kikuchi",
+    "Kyle Freeland", "Robbie Ray", "Garrett Crochet", "Nick Lodolo",
+    "Ranger Suarez", "Jesus Luzardo", "Cristopher Sanchez",
 }
-
-# ── v6: Team assignment (syntetyczne — dla team-level rollup) ────────────────
-TEAMS: list[str] = ["Atlanta", "Houston", "LA Dodgers", "NY Mets", "Baltimore", "Seattle"]
-
-def _assign_teams() -> dict[str, str]:
-    return {b: TEAMS[i % len(TEAMS)] for i, b in enumerate(BATTERS)}
-
-TEAM_OF_BATTER: dict[str, str] = _assign_teams()
+PITCHER_THROWS: dict[str, str] = {name: ("L" if name in _LEFTIES else "R") for name in PITCHER_PROFILES}
 
 # ── v6: Typowe prędkości (mph) per pitch type — do trackingu velo drift ──────
 PITCH_VELO_RANGES: dict[str, tuple[float, float]] = {
@@ -184,33 +267,37 @@ PITCH_VELO_RANGES: dict[str, tuple[float, float]] = {
 MIN_RELIABLE_PITCHES: int = 20   # both current AND baseline week need >= this
 BASELINE_WEEKS: int = 3          # rolling window dla "vs baseline" (zamiast pojedynczego poprz. tygodnia)
 
-# ── Plotly – motyw bazowy ─────────────────────────────────────────────────────
+# ── Plotly – motyw bazowy (v6.4: mocniejszy kontrast tekstu + większe marginesy) ──
+CHART_TEXT_COLOR = "#f0f6fc"    # niemal biały — dobry kontrast na ciemnym tle
+CHART_MUTED_COLOR = "#c9d1d9"   # dla drugorzędnych elementów (siatka, obramowania)
+
 PLOTLY_BASE: dict = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, sans-serif", color="#c9d1d9", size=12),
-    margin=dict(l=20, r=20, t=48, b=20),
+    font=dict(family="Inter, sans-serif", color=CHART_TEXT_COLOR, size=13),
+    margin=dict(l=40, r=40, t=56, b=40),
     hoverlabel=dict(
         bgcolor="#161b22",
         bordercolor="#30363d",
-        font=dict(color="#e6edf3", size=12),
+        font=dict(color=CHART_TEXT_COLOR, size=12),
     ),
 )
 
 LEGEND_DEFAULT: dict = dict(
-    bgcolor="rgba(22,27,34,0.9)",
+    bgcolor="rgba(22,27,34,0.92)",
     bordercolor="#30363d",
     borderwidth=1,
-    font=dict(size=11),
+    font=dict(size=11, color=CHART_TEXT_COLOR),
 )
 
 AXIS_STYLE: dict = dict(
     gridcolor="#21262d",
     linecolor="#30363d",
-    tickfont=dict(size=11, color="#c9d1d9"),
-    title_font=dict(size=12, color="#c9d1d9"),
+    tickfont=dict(size=11, color=CHART_TEXT_COLOR),
+    title_font=dict(size=12, color=CHART_TEXT_COLOR),
     zeroline=False,
     automargin=True,
+    ticklabelstandoff=6,   # v6.4: breathing room between tick labels and axis line
 )
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
@@ -222,7 +309,7 @@ APP_CSS = """
     --bg:      #0d1117;  --bg2:    #161b22;  --bg3:    #21262d;
     --border:  #30363d;  --green:  #39d353;  --red:    #f85149;
     --yellow:  #e3b341;  --blue:   #58a6ff;  --purple: #bc8cff;
-    --text:    #e6edf3;  --muted:  #7d8590;  --accent: #ff6b35;
+    --text:    #f0f6fc;  --muted:  #8b949e;  --accent: #ff6b35;
     --accent2: #ffd166;
 }
 html, body, [class*="css"] {
@@ -270,9 +357,19 @@ div[data-testid="stDataFrame"] {
     border-radius: 10px !important;
     overflow: hidden !important;
 }
-div[data-testid="stInfo"]    { background: #0d2137 !important; border-color: var(--blue) !important; }
-div[data-testid="stWarning"] { background: #2d1f00 !important; border-color: var(--yellow) !important; }
-div[data-testid="stError"]   { background: #2d0f0f !important; border-color: var(--red) !important; }
+/* v6.4: force readable white text inside dataframes/tables regardless of pandas Styler output */
+div[data-testid="stDataFrame"] * { color: var(--text) !important; }
+div[data-testid="stDataFrame"] table { font-variant-numeric: tabular-nums; }
+div[data-testid="stInfo"]    { background: #0d2137 !important; border-color: var(--blue) !important; color: var(--text) !important; }
+div[data-testid="stWarning"] { background: #2d1f00 !important; border-color: var(--yellow) !important; color: var(--text) !important; }
+div[data-testid="stError"]   { background: #2d0f0f !important; border-color: var(--red) !important; color: var(--text) !important; }
+div[data-testid="stInfo"] *, div[data-testid="stWarning"] *, div[data-testid="stError"] * { color: var(--text) !important; }
+/* v6.4: ensure every native widget label/value stays readable on the dark background */
+label, .stSelectbox, .stMultiSelect, .stSlider, .stRadio, .stCheckbox, .stTextInput,
+div[data-testid="stMarkdownContainer"] p, div[data-testid="stMetricValue"],
+div[data-testid="stMetricLabel"] {
+    color: var(--text) !important;
+}
 .dash-header {
     background: linear-gradient(135deg, #1a0800 0%, #0d1117 40%, #001510 100%);
     border: 1px solid var(--border);
@@ -311,26 +408,34 @@ div[data-testid="stError"]   { background: #2d0f0f !important; border-color: var
     font-family: 'JetBrains Mono', monospace;
     margin-top: 10px;
 }
-.kpi-row { display: flex; gap: 12px; margin: 0 0 24px 0; flex-wrap: wrap; }
+.kpi-row { display: flex; gap: 14px; margin: 0 0 24px 0; flex-wrap: wrap; }
 .kpi-card {
     background: var(--bg2);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px 20px;
-    flex: 1; min-width: 130px;
+    flex: 1; min-width: 152px; box-sizing: border-box;
     transition: border-color 0.2s;
+    overflow: hidden;
 }
 .kpi-card:hover { border-color: #444d56; }
 .kpi-card .kpi-label {
     font-size: 0.68rem; color: var(--muted);
     text-transform: uppercase; letter-spacing: 1.2px;
     margin-bottom: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .kpi-card .kpi-value {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 2rem; color: var(--accent); line-height: 1.05;
+    font-size: clamp(1.35rem, 1.6vw + 0.9rem, 2rem);
+    color: var(--accent); line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.kpi-card .kpi-sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.kpi-card .kpi-sub {
+    font-size: 0.7rem; color: var(--muted); margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .kpi-card.highlight { border-color: rgba(255,107,53,0.5); background: rgba(255,107,53,0.06); }
 .section-hdr {
     font-family: 'Bebas Neue', sans-serif;

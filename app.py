@@ -29,7 +29,7 @@ from compute import (
     filter_batter_weekly, filter_batter_delta,
     filter_matchup_weekly, filter_matchup_delta, filter_velo_weekly,
     generate_batter_insights,
-    biggest_movers_leaderboard, latest_week_headline,
+    biggest_movers_leaderboard, latest_week_headline, batter_week_rank, batter_week_matchup_table,
     sustained_movers_leaderboard, team_rollup_table, generate_weekly_digest,
 )
 from ui_components import (
@@ -153,6 +153,11 @@ md = filter_matchup_delta(md_all, filters.d_start, filters.d_end,
                            filters.sel_pitchers, filters.sel_batters, filters.sel_pt, filters.seasons,
                            filters.min_pitches, filters.min_prev)
 velo = filter_velo_weekly(velo_all, filters.d_start, filters.d_end, filters.sel_batters)
+# v6.3: league-wide view (ignores the sidebar batter search filter) so the Player
+# Report "did you know" claim can be checked against the WHOLE league, not just
+# whichever batters happen to be selected in the sidebar right now.
+bd_league = filter_batter_delta(bd_all, filters.d_start, filters.d_end, [], filters.seasons,
+                                 filters.min_pitches, filters.min_prev)
 _tf_ms = round((_time.perf_counter() - _tf) * 1000, 1)
 
 if bw.empty and mw.empty:
@@ -303,7 +308,9 @@ with tab_report:
         if headline is None:
             empty(T("report_empty_headline", lang=lang))
         else:
-            render_share_card(rep_batter, headline, lang=lang)
+            _headline_week_start = bd_rep.sort_values("week_start").iloc[-1]["week_start"]
+            rank_info = batter_week_rank(bd_league, rep_batter, _headline_week_start, use_baseline=use_base)
+            render_share_card(rep_batter, headline, rank_info=rank_info, lang=lang)
             if not headline.get("reliable", True):
                 st.warning(T("report_low_sample_warning", lang=lang, n=MIN_RELIABLE_PITCHES))
 
@@ -477,53 +484,107 @@ with tab_changes:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  TAB 6 – SZCZEGÓŁY MATCHUPU
+#  TAB 6 – BATTER × WEEK MATCHUPS  (v6.3: batter-first, not pitcher-first)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_matchup:
-    section(T("matchup_header", lang=lang))
+    section(T("matchup_header_v2", lang=lang))
+    st.caption(T("matchup_caption_v2", lang=lang))
 
     if mw.empty:
         empty(T("matchup_empty", lang=lang))
     else:
-        avail_p = sorted(mw["pitcher_name"].unique())
+        avail_b = sorted(mw["batter_name"].unique())
         c1, c2 = st.columns(2)
         with c1:
-            sel_p = st.selectbox(T("matchup_select_pitcher", lang=lang), avail_p, key="mq_p")
+            sel_b = st.selectbox(T("matchup_select_batter", lang=lang), avail_b, key="mq_b")
         with c2:
-            faced = sorted(mw[mw["pitcher_name"] == sel_p]["batter_name"].unique())
-            sel_b = st.selectbox(T("matchup_select_batter", lang=lang), faced, key="mq_b")
+            weeks_for_b = (mw[mw["batter_name"] == sel_b][["week_start", "week_label_short"]]
+                           .drop_duplicates().sort_values("week_start"))
+            week_options = weeks_for_b["week_start"].tolist()
+            week_labels = dict(zip(weeks_for_b["week_start"], weeks_for_b["week_label_short"]))
+            sel_week = st.selectbox(T("matchup_select_week", lang=lang), week_options,
+                                     format_func=lambda w: week_labels.get(w, str(w)), key="mq_week")
 
-        mw_mb = mw[(mw["pitcher_name"] == sel_p) & (mw["batter_name"] == sel_b)]
-        md_mb = md[(md["Pitcher"] == sel_p) & (md["Batter"] == sel_b)]
+        bwk_tbl = batter_week_matchup_table(mw, sel_b, sel_week)
 
-        if mw_mb.empty:
-            empty(T("matchup_empty_pair", lang=lang))
+        if bwk_tbl.empty:
+            empty(T("matchup_empty_week", lang=lang, batter=sel_b))
         else:
+            total_pitches_wk = int(bwk_tbl["total"].sum())
             render_kpis([
-                {"label": T("matchup_kpi_weeks", lang=lang),  "value": str(mw_mb["week_start"].nunique()), "sub": T("matchup_kpi_weeks_sub", lang=lang)},
-                {"label": T("matchup_kpi_total", lang=lang), "value": str(int(mw_mb.groupby("week_start")["n"].sum().sum())), "sub": T("matchup_kpi_total_sub", lang=lang)},
-                {"label": T("matchup_kpi_types", lang=lang),    "value": str(mw_mb["pitch_type"].nunique()), "sub": T("matchup_kpi_types_sub", lang=lang)},
-                {"label": T("matchup_kpi_maxdelta", lang=lang), "value": f"{md_mb['Abs Δ'].max():.1f}" if not md_mb.empty else "—",
-                 "sub": T("matchup_kpi_maxdelta_sub", lang=lang), "highlight": True},
+                {"label": T("matchup_kpi_pitchers_faced", lang=lang), "value": str(len(bwk_tbl)),
+                 "sub": T("matchup_kpi_pitchers_faced_sub", lang=lang), "highlight": True},
+                {"label": T("col_pitches", lang=lang), "value": str(total_pitches_wk),
+                 "sub": T("matchup_kpi_total_sub", lang=lang)},
             ])
-            st.plotly_chart(chart_matchup_line(mw, sel_p, sel_b, lang=lang), use_container_width=True, key="matchup_line_chart")
 
-            c_ht, c_tbl = st.columns([3, 2])
-            with c_ht:
-                section(T("matchup_section_heatmap", lang=lang))
-                st.plotly_chart(chart_matchup_heatmap(mw, sel_p, sel_b, lang=lang), use_container_width=True, key="matchup_heatmap_chart")
-            with c_tbl:
-                section(T("matchup_section_deltas", lang=lang))
-                if md_mb.empty:
-                    st.info(T("matchup_info_fewweeks", lang=lang))
+            section(T("matchup_section_table", lang=lang))
+            disp = bwk_tbl.rename(columns={
+                "pitcher_name": T("matchup_col_pitcher", lang=lang),
+                "total": T("matchup_col_pitches", lang=lang),
+                "top_pitch_type": T("matchup_col_toppt", lang=lang),
+                "fb_pct": "FB%", "bb_pct": "BB%", "os_pct": "OS%",
+            })
+            st.dataframe(
+                disp.style.background_gradient(subset=["FB%", "BB%", "OS%"], cmap="RdYlGn")
+                   .format({"FB%": "{:.1f}%", "BB%": "{:.1f}%", "OS%": "{:.1f}%"}),
+                use_container_width=True,
+            )
+            export_csv(bwk_tbl, f"batter_week_{sel_b.replace(' ', '_')}.csv", T("changes_dl_csv", lang=lang))
+
+            section(T("matchup_section_chart", lang=lang))
+            wk_label_str = week_labels.get(sel_week, str(sel_week))
+            fig_stack = go.Figure()
+            for cat_col, label in [("fb_pct", "FB%"), ("bb_pct", "BB%"), ("os_pct", "OS%")]:
+                fig_stack.add_trace(go.Bar(
+                    x=bwk_tbl["pitcher_name"], y=bwk_tbl[cat_col], name=label,
+                    marker_color=CAT_COLORS[cat_col],
+                ))
+            fig_stack = themed(
+                fig_stack, height=360, barmode="stack",
+                title=T("matchup_stack_chart_title", lang=lang, batter=sel_b, week=wk_label_str),
+                xaxis_title=T("matchup_col_pitcher", lang=lang), yaxis_title=T("axis_share_pct", lang=lang),
+            )
+            st.plotly_chart(fig_stack, use_container_width=True, key="batter_week_stack_chart")
+
+            with st.expander(T("matchup_expander_drilldown", lang=lang)):
+                avail_p_wk = bwk_tbl["pitcher_name"].tolist()
+                sel_p_drill = st.selectbox(T("matchup_select_pitcher_drill", lang=lang), avail_p_wk, key="mq_p_drill")
+
+                mw_mb = mw[(mw["pitcher_name"] == sel_p_drill) & (mw["batter_name"] == sel_b)]
+                md_mb = md[(md["Pitcher"] == sel_p_drill) & (md["Batter"] == sel_b)]
+
+                if mw_mb.empty:
+                    empty(T("matchup_empty_pair", lang=lang))
                 else:
-                    show_md = md_mb[["Week", "Pitch Name", "Now %", "Prev %", "Δ pp", "Pitches"]].head(20)
-                    st.dataframe(
-                        show_md.style.background_gradient(subset=["Δ pp"], cmap="RdYlGn", vmin=-30, vmax=30)
-                               .format({"Now %": "{:.1f}%", "Prev %": "{:.1f}%", "Δ pp": "{:+.1f} pp"}),
-                        use_container_width=True, height=280,
-                    )
-                    export_csv(md_mb, f"matchup_{sel_p.split()[-1]}_{sel_b.split()[-1]}.csv", T("changes_dl_csv", lang=lang))
+                    render_kpis([
+                        {"label": T("matchup_kpi_weeks", lang=lang), "value": str(mw_mb["week_start"].nunique()),
+                         "sub": T("matchup_kpi_weeks_sub", lang=lang)},
+                        {"label": T("matchup_kpi_total", lang=lang), "value": str(int(mw_mb.groupby("week_start")["n"].sum().sum())),
+                         "sub": T("matchup_kpi_total_sub", lang=lang)},
+                        {"label": T("matchup_kpi_types", lang=lang), "value": str(mw_mb["pitch_type"].nunique()),
+                         "sub": T("matchup_kpi_types_sub", lang=lang)},
+                        {"label": T("matchup_kpi_maxdelta", lang=lang), "value": f"{md_mb['Abs Δ'].max():.1f}" if not md_mb.empty else "—",
+                         "sub": T("matchup_kpi_maxdelta_sub", lang=lang), "highlight": True},
+                    ])
+                    st.plotly_chart(chart_matchup_line(mw, sel_p_drill, sel_b, lang=lang), use_container_width=True, key="matchup_line_chart")
+
+                    c_ht, c_tbl = st.columns([3, 2])
+                    with c_ht:
+                        section(T("matchup_section_heatmap", lang=lang))
+                        st.plotly_chart(chart_matchup_heatmap(mw, sel_p_drill, sel_b, lang=lang), use_container_width=True, key="matchup_heatmap_chart")
+                    with c_tbl:
+                        section(T("matchup_section_deltas", lang=lang))
+                        if md_mb.empty:
+                            st.info(T("matchup_info_fewweeks", lang=lang))
+                        else:
+                            show_md = md_mb[["Week", "Pitch Name", "Now %", "Prev %", "Δ pp", "Pitches"]].head(20)
+                            st.dataframe(
+                                show_md.style.background_gradient(subset=["Δ pp"], cmap="RdYlGn", vmin=-30, vmax=30)
+                                       .format({"Now %": "{:.1f}%", "Prev %": "{:.1f}%", "Δ pp": "{:+.1f} pp"}),
+                                use_container_width=True, height=280,
+                            )
+                            export_csv(md_mb, f"matchup_{sel_p_drill.split()[-1]}_{sel_b.split()[-1]}.csv", T("changes_dl_csv", lang=lang))
 
 
 # ══════════════════════════════════════════════════════════════════════════════

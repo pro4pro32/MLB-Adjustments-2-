@@ -45,7 +45,7 @@ def _apply_theme(fig: go.Figure, layout_kw: dict, x_angle: int | None = None) ->
     if "title" in layout_kw and isinstance(layout_kw["title"], str):
         layout_kw["title"] = dict(
             text=layout_kw["title"],
-            font=dict(color="#e6edf3", size=13),
+            font=dict(color="#f0f6fc", size=13),
             x=0, xanchor="left",
         )
 
@@ -238,13 +238,13 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -
             ),
         ))
 
-    return themed(
-        fig, height=380,
+    return themed_rot(
+        fig, angle=-30, height=380,
         title=T("chart_trend_title", lang=lang, batter=batter),
         xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
-                    font=dict(size=11, color="#c9d1d9")),
+                    font=dict(size=11, color="#f0f6fc")),
     )
 
 
@@ -266,8 +266,8 @@ def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = No
             hovertemplate=f"<b>{lbl} Δ</b><br>Tydzień: %{{x}}<br>Zmiana: <b>%{{y:+.1f}} pp</b><extra></extra>",
         ))
 
-    return themed(
-        fig, height=300, barmode="group",
+    return themed_rot(
+        fig, angle=-30, height=300, barmode="group",
         title=T("chart_delta_title", lang=lang, batter=batter),
         xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_delta_pp", lang=lang),
         bargap=0.15, bargroupgap=0.05,
@@ -287,13 +287,13 @@ def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None)
 
     fig = go.Figure(go.Heatmap(
         z=z_data, x=x_labels, y=y_labels,
-        colorscale=[[0.0, "#0d1117"], [0.2, "#1a2a1a"], [0.5, "#ff6b35"], [0.8, "#ffd166"], [1.0, "#ffffff"]],
+        colorscale=[[0.0, "#161b22"], [0.25, "#7a3a1a"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1.0, "#ffb703"]],
         zmin=0, zmax=80,
         text=text_data, texttemplate="%{text:.1f}%",
-        textfont=dict(size=11, family="JetBrains Mono"),
+        textfont=dict(size=11, family="JetBrains Mono", color="#0d1117"),
         hovertemplate="Kategoria: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
-        colorbar=dict(title="%", tickfont=dict(color="#7d8590"), title_font=dict(color="#7d8590"),
+        colorbar=dict(title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc"),
                       thickness=12, len=0.8),
     ))
     themed_rot(fig, angle=-30, height=220,
@@ -348,7 +348,7 @@ def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame]
             wk_label = str(last["week_label"]).replace("\n", " ").replace("·", "").strip()
             title = T("chart_zone_delta_title", lang=lang, batter=batter, week=wk_label)
             zmin, zmax, colorscale = -25, 25, [
-                [0, "#f85149"], [0.5, "#161b22"], [1, "#39d353"],
+                [0, "#c0392b"], [0.5, "#161b22"], [1, "#1f8b3a"],
             ]
 
     if mode == "level":
@@ -358,24 +358,24 @@ def chart_zone_diamond(bw: pd.DataFrame, batter: str, bd: Optional[pd.DataFrame]
         wk_label = str(last["week_label"]).replace("\n", " ").replace("·", "").strip()
         title = T("chart_zone_level_title", lang=lang, batter=batter, week=wk_label)
         zmin, zmax, colorscale = 0, 20, [
-            [0, "#0d1117"], [0.4, "#1a3a5c"], [0.7, "#ff6b35"], [1, "#ffd166"],
+            [0, "#161b22"], [0.4, "#1a3a5c"], [0.7, "#ff6b35"], [1, "#ffb703"],
         ]
 
     z, text = _zone_grid_values(values_by_zone)
 
     fig = go.Figure(go.Heatmap(
         z=z, text=text, texttemplate="%{text}",
-        textfont=dict(size=13, family="JetBrains Mono", color="#e6edf3"),
+        textfont=dict(size=13, family="JetBrains Mono", color="#f0f6fc"),
         colorscale=colorscale, zmin=zmin, zmax=zmax,
         showscale=True,
-        xgap=6, ygap=6,
+        xgap=8, ygap=8,
         hoverongaps=False,
         colorbar=dict(thickness=12, title="pp" if mode == "delta" else "%",
-                      tickfont=dict(color="#7d8590"), title_font=dict(color="#7d8590")),
+                      tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc")),
     ))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False, autorange="reversed")
-    fig = themed(fig, height=380, title=title, margin=dict(l=10, r=10, t=48, b=10))
+    fig = themed(fig, height=380, title=title, margin=dict(l=16, r=16, t=56, b=16))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False, autorange="reversed")
     return fig
@@ -397,12 +397,12 @@ def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15, lang: str | None 
         x=rank["adj_score"], y=rank["batter_name"], orientation="h",
         marker_color=colors, text=rank["adj_score"].round(1),
         texttemplate="  %{text:.1f}", textposition="outside", cliponaxis=False,
-        textfont=dict(color="#c9d1d9", size=11),
+        textfont=dict(color="#f0f6fc", size=11),
         hovertemplate="<b>%{y}</b><br>Adj. Score: %{x:.1f}<extra></extra>",
     ))
     return themed(fig, height=max(340, top_n * 30),
                   title=T("chart_adjrank_title", lang=lang),
-                  xaxis_title="Adjustment Score", yaxis_title="", margin=dict(r=80))
+                  xaxis_title="Adjustment Score", yaxis_title="", margin=dict(r=110, l=20, t=64, b=40))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,7 +428,7 @@ def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure
         marker_color=bar["color"],
         text=bar.apply(lambda r: f"{r['top_mover_label']} {r['top_mover_delta']:+.1f}pp", axis=1),
         textposition="outside", cliponaxis=False,
-        textfont=dict(color="#c9d1d9", size=11),
+        textfont=dict(color="#f0f6fc", size=11),
         hovertemplate=(
             "<b>%{y}</b><br>Kategoria: %{customdata[0]}<br>"
             "Zmiana: <b>%{x:+.1f} pp</b><br>Pitchy: %{customdata[1]}<extra></extra>"
@@ -437,23 +437,38 @@ def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure
     ))
     return themed(fig, height=max(380, len(bar) * 34),
                   title=T("chart_movers_title", lang=lang),
-                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=140))
+                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=180, l=20, t=64, b=40))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SHAREABLE PLAYER REPORT CARD (NOWE)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_share_card(batter: str, headline: dict, lang: str | None = None) -> None:
+def render_share_card(batter: str, headline: dict, rank_info: dict | None = None, lang: str | None = None) -> None:
     """
-    Renderuje 'shareable' kartę do wysłania graczowi/drużynie:
-    'Did you know you were the hitter with the biggest change in X this week?'
-    v6: dodaje outcome context (whiff%/BA), reliability i platoon confound note.
-    v6.2: language-aware.
+    Renderuje 'shareable' kartę do wysłania graczowi/drużynie.
+    v6.3 FIX: headline text was previously always claiming "you had THE biggest
+    change in the league" regardless of whether that was true — it only ever
+    showed the SELECTED player's own biggest category change, not a league
+    comparison. Now it only uses the superlative framing when `rank_info`
+    confirms this player is actually #1 league-wide that week; otherwise it
+    states the fact plus their honest rank (or a neutral framing if rank is
+    unknown, e.g. too few reliable data points to rank).
     """
     direction_word = T("share_direction_up", lang=lang) if headline["delta"] > 0 else T("share_direction_down", lang=lang)
     sign = "+" if headline["delta"] > 0 else ""
     rel_note = "" if headline.get("reliable", True) else T("share_low_sample", lang=lang)
+
+    if rank_info and rank_info.get("is_top"):
+        headline_html = T("share_headline", lang=lang, sign=sign, delta=headline["delta"],
+                           direction=direction_word, category=headline["category_label"])
+    elif rank_info:
+        headline_html = T("share_headline_ranked", lang=lang, sign=sign, delta=headline["delta"],
+                           direction=direction_word, category=headline["category_label"],
+                           rank=rank_info["rank"], total=rank_info["total"])
+    else:
+        headline_html = T("share_headline_neutral", lang=lang, sign=sign, delta=headline["delta"],
+                           direction=direction_word, category=headline["category_label"])
 
     outcome_bits = []
     if "whiff_pct" in headline:
@@ -465,8 +480,6 @@ def render_share_card(batter: str, headline: dict, lang: str | None = None) -> N
     confound_note = T("share_confound", lang=lang) if headline.get("platoon_confound_flag") else ""
 
     eyebrow  = T("share_eyebrow", lang=lang, week=headline["week_label"])
-    headline_html = T("share_headline", lang=lang, sign=sign, delta=headline["delta"],
-                       direction=direction_word, category=headline["category_label"])
     meta = T("share_meta", lang=lang, adj=headline["adj_score"], total=headline["total"])
 
     html = f"""
@@ -507,7 +520,7 @@ def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str, lang: s
             hovertemplate=f"<b>{b}</b><br>Tydzień: %{{x}}<br>{label}: %{{y:.1f}}%<extra></extra>",
         ))
 
-    themed(fig, height=340, title=T("chart_compare_title", lang=lang, full=full),
+    themed_rot(fig, angle=-30, height=340, title=T("chart_compare_title", lang=lang, full=full),
            xaxis_title=T("axis_week", lang=lang), yaxis_title=f"{label} (%)", hovermode="x unified")
     return fig
 
@@ -531,7 +544,7 @@ def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | 
                           "%: %{y:.1f}%<br>Total pitchy: %{customdata[2]}<extra></extra>"),
         ))
 
-    themed(fig, height=360, title=T("chart_matchup_line_title", lang=lang, pitcher=pitcher, batter=batter),
+    themed_rot(fig, angle=-30, height=360, title=T("chart_matchup_line_title", lang=lang, pitcher=pitcher, batter=batter),
            xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang), hovermode="x unified")
     return fig
 
@@ -546,12 +559,12 @@ def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str, lang: str
 
     fig = go.Figure(go.Heatmap(
         z=pivot.values, x=list(pivot.columns), y=pivot.index.tolist(),
-        colorscale=[[0, "#0d1117"], [0.25, "#1a3a5c"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1, "#fff"]],
+        colorscale=[[0, "#161b22"], [0.25, "#1a3a5c"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1, "#ffb703"]],
         zmin=0, zmax=80, text=np.round(pivot.values, 1), texttemplate="%{text:.1f}%",
-        textfont=dict(size=10, family="JetBrains Mono"),
+        textfont=dict(size=10, family="JetBrains Mono", color="#0d1117"),
         hovertemplate="Pitch: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
-        colorbar=dict(thickness=10, title="%", tickfont=dict(color="#7d8590"), title_font=dict(color="#7d8590")),
+        colorbar=dict(thickness=10, title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc")),
     ))
     themed_rot(fig, angle=-30, height=max(240, len(pivot) * 48 + 80),
                title=T("chart_matchup_heatmap_title", lang=lang, pitcher=pitcher, batter=batter), xaxis_title="", yaxis_title="")
@@ -572,7 +585,7 @@ def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20, lang: str | None = 
     fig = go.Figure(go.Bar(
         x=bar["Δ pp"], y=bar["label"], orientation="h", marker_color=bar["color"],
         text=bar.apply(lambda r: f"{r['Pitch Name']} {r['Δ pp']:+.1f}pp", axis=1),
-        textposition="outside", cliponaxis=False, textfont=dict(color="#c9d1d9", size=10),
+        textposition="outside", cliponaxis=False, textfont=dict(color="#f0f6fc", size=10),
         customdata=np.stack([
             bar["Pitch Name"], bar["Now %"], bar["Prev %"], bar["Pitches"],
             bar["Week"].str.split("\n").str[0],
@@ -585,7 +598,7 @@ def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20, lang: str | None = 
     ))
     return themed(fig, height=max(420, top_n * 27),
                   title=T("chart_changes_title", lang=lang, n=top_n),
-                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=160))
+                  xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=200, l=20, t=64, b=40))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -619,12 +632,12 @@ def chart_outcome_trend(bd: pd.DataFrame, batter: str, lang: str | None = None) 
             customdata=sub["ba_proxy"],
         ))
 
-    fig = themed(fig, height=340,
+    fig = themed_rot(fig, angle=-30, height=340,
                  title=T("chart_outcome_title", lang=lang, batter=batter),
                  xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_outcome_pct", lang=lang),
                  hovermode="x unified",
                  yaxis2=dict(overlaying="y", side="right", title="Adj. Score",
-                             showgrid=False, tickfont=dict(color="#7d8590")))
+                             showgrid=False, tickfont=dict(color="#c9d1d9")))
     return fig
 
 
@@ -641,7 +654,7 @@ def chart_platoon_context(bd: pd.DataFrame, batter: str, lang: str | None = None
         textposition="outside",
         hovertemplate="Tydzień: %{x}<br>%% rzutów vs LHP: %{y:.1f}%%<extra></extra>",
     ))
-    fig = themed(fig, height=260,
+    fig = themed_rot(fig, angle=-30, height=260,
                  title=T("chart_platoon_title", lang=lang, batter=batter),
                  xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_pct_vs_lhp", lang=lang))
     fig.update_yaxes(range=[0, 100])
@@ -666,7 +679,7 @@ def chart_velo_trend(velo: pd.DataFrame, batter: str, lang: str | None = None) -
             hovertemplate=(f"<b>{pt}</b><br>Tydzień: %{{x}}<br>Śr. prędkość: %{{y:.1f}} mph<br>"
                           "Δ vs poprz. tydz.: %{customdata[0]:+.1f} mph<br>N: %{customdata[1]}<extra></extra>"),
         ))
-    return themed(fig, height=340,
+    return themed_rot(fig, angle=-30, height=340,
                   title=T("chart_velo_title", lang=lang, batter=batter),
                   xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_mph", lang=lang), hovermode="x unified")
 
@@ -689,7 +702,7 @@ def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figu
     ))
     return themed(fig, height=max(300, len(d) * 45),
                   title=T("chart_team_title", lang=lang),
-                  xaxis_title=T("axis_avg_adj_score", lang=lang), yaxis_title="", margin=dict(r=80))
+                  xaxis_title=T("axis_avg_adj_score", lang=lang), yaxis_title="", margin=dict(r=110, l=20, t=64, b=40))
 
 
 def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figure:
@@ -704,13 +717,13 @@ def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figu
     fig = go.Figure(go.Bar(
         x=d["cumulative_delta"], y=d["label"], orientation="h", marker_color=colors,
         text=d.apply(lambda r: f"{r['streak_weeks']} tyg. · {r['cumulative_delta']:+.1f}pp", axis=1),
-        textposition="outside", cliponaxis=False, textfont=dict(color="#c9d1d9", size=10),
+        textposition="outside", cliponaxis=False, textfont=dict(color="#f0f6fc", size=10),
         hovertemplate="<b>%{y}</b><br>Streak: %{customdata} tygodni<br>Skumulowana zmiana: %{x:+.1f} pp<extra></extra>",
         customdata=d["streak_weeks"],
     ))
     return themed(fig, height=max(360, len(d) * 32),
                   title=T("chart_sustained_title", lang=lang),
-                  xaxis_title=T("axis_cumulative_delta", lang=lang), yaxis_title="", margin=dict(r=140))
+                  xaxis_title=T("axis_cumulative_delta", lang=lang), yaxis_title="", margin=dict(r=190, l=20, t=64, b=40))
 
 
 def render_digest_block(digest_text: str) -> None:
