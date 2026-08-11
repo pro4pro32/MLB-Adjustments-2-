@@ -413,10 +413,11 @@ div[data-testid="stMetricLabel"] {
     background: var(--bg2);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 16px 20px;
-    flex: 1; min-width: 152px; box-sizing: border-box;
+    padding: 14px 16px;
+    flex: 1; min-width: 138px; box-sizing: border-box;
     transition: border-color 0.2s;
     overflow: hidden;
+    container-type: inline-size;
 }
 .kpi-card:hover { border-color: #444d56; }
 .kpi-card .kpi-label {
@@ -427,7 +428,7 @@ div[data-testid="stMetricLabel"] {
 }
 .kpi-card .kpi-value {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(1.35rem, 1.6vw + 0.9rem, 2rem);
+    font-size: clamp(1rem, 15cqi, 2rem);
     color: var(--accent); line-height: 1.15;
     font-variant-numeric: tabular-nums;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

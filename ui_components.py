@@ -74,20 +74,30 @@ def themed_rot(fig: go.Figure, angle: int = -30, **layout_kw: Any) -> go.Figure:
 class SidebarFilters:
     """Renderuje sidebar i przechowuje wartości filtrów."""
 
-    def __init__(self, raw_df: pd.DataFrame, lang: str | None = None) -> None:
-        self._render(raw_df, lang)
+    def __init__(self, raw_df: pd.DataFrame, lang: str | None = None,
+                 seasons_override: list[int] | None = None) -> None:
+        self._render(raw_df, lang, seasons_override)
 
-    def _render(self, raw_df: pd.DataFrame, lang: str | None = None) -> None:
+    def _render(self, raw_df: pd.DataFrame, lang: str | None = None,
+                seasons_override: list[int] | None = None) -> None:
         with st.sidebar:
-            st.markdown(T("sidebar_app_name", lang=lang))
-
-            st.markdown(T("sidebar_seasons_header", lang=lang))
-            self.seasons: list[int] = st.multiselect(
-                T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2025, 2026],
-                label_visibility="collapsed",
-            )
-            if not self.seasons:
-                self.seasons = [2026]
+            # v6.5 FIX: app.py already renders the app-name header AND a seasons picker
+            # before load_data() (it has to — seasons must be known before data loads).
+            # This class used to *also* render both, producing a visibly duplicated
+            # sidebar (two headers, two season pickers, only one of which actually did
+            # anything — its value got silently overwritten). Now: if the caller already
+            # picked seasons, just use that value and skip re-rendering the widget.
+            if seasons_override is not None:
+                self.seasons: list[int] = seasons_override
+            else:
+                st.markdown(T("sidebar_app_name", lang=lang))
+                st.markdown(T("sidebar_seasons_header", lang=lang))
+                self.seasons = st.multiselect(
+                    T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2025, 2026],
+                    label_visibility="collapsed",
+                )
+                if not self.seasons:
+                    self.seasons = [2026]
 
             st.markdown(T("sidebar_date_header", lang=lang))
             min_d = raw_df["game_date"].min().date()
@@ -213,6 +223,17 @@ def export_csv(df: pd.DataFrame, filename: str, label: str = "⬇ CSV") -> None:
 #  CHART: Pitch-type trend (FB%/BB%/OS%) — główny wykres profilu pałkarza
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _thin_week_ticks(fig: go.Figure, x_labels: list, max_ticks: int = 15) -> go.Figure:
+    """v6.5: with many weeks on a time-series x-axis, rotated tick labels still get
+    visually dense/hard to scan even without literal pixel overlap. Thin to ~max_ticks
+    evenly-spaced labels for readability, consistent with the heatmap fix."""
+    n = len(x_labels)
+    if n > max_ticks:
+        step = max(1, -(-n // max_ticks))
+        fig.update_xaxes(tickmode="array", tickvals=x_labels[::step])
+    return fig
+
+
 def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
     """Line chart: FB%/BB%/OS% per week dla jednego battera."""
     sub = bw[bw["batter_name"] == batter].sort_values("week_start")
@@ -238,7 +259,7 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -
             ),
         ))
 
-    return themed_rot(
+    fig = themed_rot(
         fig, angle=-30, height=380,
         title=T("chart_trend_title", lang=lang, batter=batter),
         xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang),
@@ -246,6 +267,7 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -
         legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
                     font=dict(size=11, color="#f0f6fc")),
     )
+    return _thin_week_ticks(fig, sub["week_label_short"].tolist())
 
 
 def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
@@ -266,12 +288,13 @@ def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = No
             hovertemplate=f"<b>{lbl} Δ</b><br>Tydzień: %{{x}}<br>Zmiana: <b>%{{y:+.1f}} pp</b><extra></extra>",
         ))
 
-    return themed_rot(
+    fig = themed_rot(
         fig, angle=-30, height=300, barmode="group",
         title=T("chart_delta_title", lang=lang, batter=batter),
         xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_delta_pp", lang=lang),
         bargap=0.15, bargroupgap=0.05,
     )
+    return _thin_week_ticks(fig, sub["week_label_short"].tolist())
 
 
 def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
@@ -284,20 +307,35 @@ def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None)
     x_labels  = sub["week_label_short"].tolist()
     y_labels  = [ALL_CATEGORIES[c]["short"] for c in PITCH_CAT_COLS]
     text_data = np.round(z_data, 1)
+    n_weeks   = len(x_labels)
 
-    fig = go.Figure(go.Heatmap(
+    # v6.5 FIX: with many weeks selected (e.g. a full 1-2 season date range), forcing a
+    # "42.6%" text label into every cell makes them all smear into an unreadable block.
+    # Past a threshold, drop the per-cell text (color + hover tooltip still convey the
+    # value) and thin out x-axis tick labels so they don't crowd together either.
+    show_text = n_weeks <= 20
+    heatmap_kwargs = dict(
         z=z_data, x=x_labels, y=y_labels,
         colorscale=[[0.0, "#161b22"], [0.25, "#7a3a1a"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1.0, "#ffb703"]],
         zmin=0, zmax=80,
-        text=text_data, texttemplate="%{text:.1f}%",
-        textfont=dict(size=11, family="JetBrains Mono", color="#0d1117"),
         hovertemplate="Kategoria: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
         colorbar=dict(title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc"),
                       thickness=12, len=0.8),
-    ))
-    themed_rot(fig, angle=-30, height=220,
+    )
+    if show_text:
+        heatmap_kwargs.update(text=text_data, texttemplate="%{text:.1f}%",
+                               textfont=dict(size=11, family="JetBrains Mono", color="#0d1117"))
+
+    fig = go.Figure(go.Heatmap(**heatmap_kwargs))
+    themed_rot(fig, angle=-35, height=220,
                title=T("chart_heatmap_title", lang=lang, batter=batter), xaxis_title="", yaxis_title="")
+    if n_weeks > 20:
+        # thin ticks to ~15 evenly-spaced labels instead of cramming every week in
+        # (ceil division so step actually reduces the count, not floor division which
+        # can round down to a no-op step of 1 for moderate week counts)
+        step = max(1, -(-n_weeks // 15))
+        fig.update_xaxes(tickmode="array", tickvals=x_labels[::step])
     return fig
 
 
@@ -400,14 +438,35 @@ def chart_adj_score_ranking(bd: pd.DataFrame, top_n: int = 15, lang: str | None 
         textfont=dict(color="#f0f6fc", size=11),
         hovertemplate="<b>%{y}</b><br>Adj. Score: %{x:.1f}<extra></extra>",
     ))
-    return themed(fig, height=max(340, top_n * 30),
+    fig = themed(fig, height=max(340, top_n * 30),
                   title=T("chart_adjrank_title", lang=lang),
                   xaxis_title="Adjustment Score", yaxis_title="", margin=dict(r=110, l=20, t=64, b=40))
+    return _pad_bar_xaxis(fig, rank["adj_score"].tolist(), pad=1.3, positive_only=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CHART: Biggest Movers leaderboard (NOWE — "did you know" ranking)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _pad_bar_xaxis(fig: go.Figure, values, pad: float = 1.45, positive_only: bool = False) -> go.Figure:
+    """
+    v6.5 FIX: Plotly's textposition='outside' places bar-tip text just past the bar's
+    end — but when a bar's magnitude approaches the x-axis extreme, that text has
+    nowhere left to go and visually collides with the y-axis category label sitting
+    right there. Padding the axis range beyond the data's min/max gives the outside
+    text room to breathe so it never overlaps the row label next to it.
+    """
+    vals = [v for v in values if v is not None and not (isinstance(v, float) and np.isnan(v))]
+    if not vals:
+        return fig
+    if positive_only:
+        hi = max(vals) if vals else 0
+        fig.update_xaxes(range=[0, max(hi * pad, 1)])
+    else:
+        hi = max(abs(min(vals)), abs(max(vals)), 1e-9)
+        fig.update_xaxes(range=[-hi * pad, hi * pad])
+    return fig
+
 
 def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure:
     """
@@ -435,9 +494,12 @@ def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure
         ),
         customdata=bar[["top_mover_label", "total"]].values,
     ))
-    return themed(fig, height=max(380, len(bar) * 34),
+    fig = themed(fig, height=max(380, len(bar) * 34),
                   title=T("chart_movers_title", lang=lang),
                   xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=180, l=20, t=64, b=40))
+    return _pad_bar_xaxis(fig, bar["top_mover_delta"].tolist(), pad=1.5)
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -522,7 +584,9 @@ def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str, lang: s
 
     themed_rot(fig, angle=-30, height=340, title=T("chart_compare_title", lang=lang, full=full),
            xaxis_title=T("axis_week", lang=lang), yaxis_title=f"{label} (%)", hovermode="x unified")
-    return fig
+    all_weeks = (bw[bw["batter_name"].isin(batters)][["week_start", "week_label_short"]]
+                 .drop_duplicates().sort_values("week_start")["week_label_short"].tolist())
+    return _thin_week_ticks(fig, all_weeks)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -546,7 +610,7 @@ def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | 
 
     themed_rot(fig, angle=-30, height=360, title=T("chart_matchup_line_title", lang=lang, pitcher=pitcher, batter=batter),
            xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_share_pct", lang=lang), hovermode="x unified")
-    return fig
+    return _thin_week_ticks(fig, sub["week_label_short"].drop_duplicates().tolist())
 
 
 def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | None = None) -> go.Figure:
@@ -556,18 +620,25 @@ def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str, lang: str
              .fillna(0))
     pivot = pivot.loc[pivot.mean(axis=1).sort_values(ascending=False).index]
     pivot.index = [f"{pt} – {PITCH_TYPES.get(pt, pt)}" for pt in pivot.index]
+    n_weeks_mh = len(pivot.columns)
 
-    fig = go.Figure(go.Heatmap(
+    mh_kwargs = dict(
         z=pivot.values, x=list(pivot.columns), y=pivot.index.tolist(),
         colorscale=[[0, "#161b22"], [0.25, "#1a3a5c"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1, "#ffb703"]],
-        zmin=0, zmax=80, text=np.round(pivot.values, 1), texttemplate="%{text:.1f}%",
-        textfont=dict(size=10, family="JetBrains Mono", color="#0d1117"),
+        zmin=0, zmax=80,
         hovertemplate="Pitch: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
         colorbar=dict(thickness=10, title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc")),
-    ))
-    themed_rot(fig, angle=-30, height=max(240, len(pivot) * 48 + 80),
+    )
+    if n_weeks_mh <= 20:
+        mh_kwargs.update(text=np.round(pivot.values, 1), texttemplate="%{text:.1f}%",
+                          textfont=dict(size=10, family="JetBrains Mono", color="#0d1117"))
+    fig = go.Figure(go.Heatmap(**mh_kwargs))
+    themed_rot(fig, angle=-35, height=max(240, len(pivot) * 48 + 80),
                title=T("chart_matchup_heatmap_title", lang=lang, pitcher=pitcher, batter=batter), xaxis_title="", yaxis_title="")
+    if n_weeks_mh > 20:
+        step = max(1, -(-n_weeks_mh // 15))
+        fig.update_xaxes(tickmode="array", tickvals=list(pivot.columns)[::step])
     return fig
 
 
@@ -596,9 +667,10 @@ def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20, lang: str | None = 
             "Δ: <b>%{x:+.1f} pp</b><br>Pitchy: %{customdata[3]} · Tydzień: %{customdata[4]}<extra></extra>"
         ),
     ))
-    return themed(fig, height=max(420, top_n * 27),
+    fig = themed(fig, height=max(420, top_n * 27),
                   title=T("chart_changes_title", lang=lang, n=top_n),
                   xaxis_title=T("axis_delta_pp", lang=lang), yaxis_title="", margin=dict(r=200, l=20, t=64, b=40))
+    return _pad_bar_xaxis(fig, bar["Δ pp"].tolist(), pad=1.5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -638,7 +710,7 @@ def chart_outcome_trend(bd: pd.DataFrame, batter: str, lang: str | None = None) 
                  hovermode="x unified",
                  yaxis2=dict(overlaying="y", side="right", title="Adj. Score",
                              showgrid=False, tickfont=dict(color="#c9d1d9")))
-    return fig
+    return _thin_week_ticks(fig, sub["week_label_short"].tolist())
 
 
 def chart_platoon_context(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
@@ -658,7 +730,7 @@ def chart_platoon_context(bd: pd.DataFrame, batter: str, lang: str | None = None
                  title=T("chart_platoon_title", lang=lang, batter=batter),
                  xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_pct_vs_lhp", lang=lang))
     fig.update_yaxes(range=[0, 100])
-    return fig
+    return _thin_week_ticks(fig, sub["week_label_short"].tolist())
 
 
 def chart_velo_trend(velo: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
@@ -679,9 +751,10 @@ def chart_velo_trend(velo: pd.DataFrame, batter: str, lang: str | None = None) -
             hovertemplate=(f"<b>{pt}</b><br>Tydzień: %{{x}}<br>Śr. prędkość: %{{y:.1f}} mph<br>"
                           "Δ vs poprz. tydz.: %{customdata[0]:+.1f} mph<br>N: %{customdata[1]}<extra></extra>"),
         ))
-    return themed_rot(fig, angle=-30, height=340,
+    fig = themed_rot(fig, angle=-30, height=340,
                   title=T("chart_velo_title", lang=lang, batter=batter),
                   xaxis_title=T("axis_week", lang=lang), yaxis_title=T("axis_mph", lang=lang), hovermode="x unified")
+    return _thin_week_ticks(fig, sub["week_label_short"].drop_duplicates().tolist())
 
 
 def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figure:
@@ -693,6 +766,7 @@ def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figu
         x=d["avg_adj"], y=d["team"], orientation="h",
         marker_color="#ff6b35",
         text=d["avg_adj"].round(1), textposition="outside", cliponaxis=False,
+        textfont=dict(color="#f0f6fc", size=11),
         customdata=d[["top_batter", "top_mover_label", "top_mover_delta", "n_batter_weeks"]].values,
         hovertemplate=(
             "<b>%{y}</b><br>Śr. Adj. Score: %{x:.1f}<br>"
@@ -700,9 +774,10 @@ def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figu
             "N batter-tygodni: %{customdata[3]}<extra></extra>"
         ),
     ))
-    return themed(fig, height=max(300, len(d) * 45),
+    fig = themed(fig, height=max(300, len(d) * 45),
                   title=T("chart_team_title", lang=lang),
                   xaxis_title=T("axis_avg_adj_score", lang=lang), yaxis_title="", margin=dict(r=110, l=20, t=64, b=40))
+    return _pad_bar_xaxis(fig, d["avg_adj"].tolist(), pad=1.3, positive_only=True)
 
 
 def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figure:
@@ -721,16 +796,17 @@ def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figu
         hovertemplate="<b>%{y}</b><br>Streak: %{customdata} tygodni<br>Skumulowana zmiana: %{x:+.1f} pp<extra></extra>",
         customdata=d["streak_weeks"],
     ))
-    return themed(fig, height=max(360, len(d) * 32),
+    fig = themed(fig, height=max(360, len(d) * 32),
                   title=T("chart_sustained_title", lang=lang),
                   xaxis_title=T("axis_cumulative_delta", lang=lang), yaxis_title="", margin=dict(r=190, l=20, t=64, b=40))
+    return _pad_bar_xaxis(fig, d["cumulative_delta"].tolist(), pad=1.55)
 
 
-def render_digest_block(digest_text: str) -> None:
+def render_digest_block(digest_text: str, lang: str | None = None) -> None:
     """Wyświetla auto-wygenerowany weekly digest jako kopiowalny blok tekstu."""
     st.markdown(digest_text)
     st.download_button(
-        "⬇ Pobierz digest (.md)", data=digest_text.encode("utf-8"),
+        T("digest_dl_button", lang=lang), data=digest_text.encode("utf-8"),
         file_name="weekly_digest.md", mime="text/markdown",
     )
 

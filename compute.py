@@ -668,6 +668,65 @@ def generate_weekly_digest(bd: pd.DataFrame, top_n: int = 5,
 #  11.  INSIGHTS  (auto-generated text)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  12.  PERIOD COMPARISON  (v6.5 — custom week-range A vs week-range B, all league)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_period_comparison(raw_df: pd.DataFrame, bw: pd.DataFrame,
+                               weeks_p1: list, weeks_p2: list,
+                               min_pitches: int = 1) -> pd.DataFrame:
+    """
+    'Period 1 (weeks X-Y) vs Period 2 (weeks A-B), all MLB batters, all 16
+    categories + average velocity.' Sums the underlying pitch counts across
+    each period's weeks (not a naive average-of-weekly-percentages, which
+    would be biased by uneven weekly volume) and returns one wide row per
+    batter with p1/p2/delta for every category, ready to sort by any column.
+    """
+    n_cols = [f"n_{_cat_key(c)}" for c in CAT_COLS]
+
+    def agg_period(weeks):
+        sub = bw[bw["week_start"].isin(weeks)]
+        if sub.empty:
+            return pd.DataFrame(columns=["batter_name", "total"] + CAT_COLS)
+        g = sub.groupby("batter_name").agg(
+            total=("total", "sum"),
+            **{nc: (nc, "sum") for nc in n_cols},
+        ).reset_index()
+        for c in CAT_COLS:
+            key = _cat_key(c)
+            g[c] = (g[f"n_{key}"] / g["total"].replace(0, np.nan) * 100).round(1)
+        return g[["batter_name", "total"] + CAT_COLS]
+
+    p1 = agg_period(weeks_p1).add_suffix("_p1").rename(columns={"batter_name_p1": "batter_name"})
+    p2 = agg_period(weeks_p2).add_suffix("_p2").rename(columns={"batter_name_p2": "batter_name"})
+    if p1.empty or p2.empty:
+        return pd.DataFrame()
+
+    merged = p1.merge(p2, on="batter_name", how="inner")
+    if merged.empty:
+        return merged
+
+    # overall average velocity (all pitch types combined) per period — from raw pitches,
+    # since bw/batter_weekly doesn't carry velocity (that's tracked per pitch-type elsewhere)
+    d = raw_df.copy()
+    d["week_start"] = floor_to_monday(d["game_date"])
+    d = d.dropna(subset=["release_speed"])
+    velo1 = d[d["week_start"].isin(weeks_p1)].groupby("batter_name")["release_speed"].mean().rename("avg_velo_p1")
+    velo2 = d[d["week_start"].isin(weeks_p2)].groupby("batter_name")["release_speed"].mean().rename("avg_velo_p2")
+    merged = merged.merge(velo1, on="batter_name", how="left").merge(velo2, on="batter_name", how="left")
+    merged["avg_velo_p1"] = merged["avg_velo_p1"].round(1)
+    merged["avg_velo_p2"] = merged["avg_velo_p2"].round(1)
+    merged["d_velo"] = (merged["avg_velo_p2"] - merged["avg_velo_p1"]).round(1)
+
+    for c in CAT_COLS:
+        key = _cat_key(c)
+        merged[f"d_{key}"] = (merged[f"{c}_p2"] - merged[f"{c}_p1"]).round(1)
+
+    merged["team"] = merged["batter_name"].map(TEAM_OF_BATTER).fillna("Unknown")
+    merged = merged[(merged["total_p1"] >= min_pitches) & (merged["total_p2"] >= min_pitches)]
+    return merged.reset_index(drop=True)
+
+
 def generate_batter_insights(bd_batter: pd.DataFrame, batter: str, lang: str = "en") -> list[str]:
     from i18n import T
     if bd_batter.empty:

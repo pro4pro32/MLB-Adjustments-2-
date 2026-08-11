@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.4)
+# MLB Pitch Mix Dashboard (v6.5)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,53 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v6.5.1 — full re-test pass (visual, all 9 tabs, all languages)
+Did a complete re-verification after v6.5: real-browser screenshots of every tab (not just
+the ones that had bugs before), plus the full headless regression suite. Found and fixed one
+more real bug in the process:
+- **Digest download button was hardcoded in Polish** (`"⬇ Pobierz digest (.md)"`) regardless
+  of the selected UI language — a leftover from before i18n was wired through that specific
+  function. Fixed and swept the rest of the codebase for similar leftovers (none found).
+- Extended the "thin ticks above ~15 labels" fix (previously only on heatmaps) to every
+  week-axis line/bar chart (trend, delta bars, outcome overlay, platoon context, velocity,
+  comparison, matchup line) for consistency — dense-but-technically-not-overlapping tick
+  labels are now readable everywhere, not just where the collision was most visible.
+- All 9 tabs visually confirmed clean: no duplicate widgets, no overlapping text, correct
+  dark theme/contrast, Period Comparison table showing all 210 batters with real team names
+  and working sort in both directions.
+
+## v6.5 — visually verified fixes + Period Comparison tab
+This round was verified with an actual headless browser (Playwright) against the real
+running app, not just code review — screenshots below are what caught these:
+- **Duplicate sidebar (real bug)**: the app rendered "Pitch Mix Analyzer" and a "Seasons"
+  picker *twice* — once before data load (needed to know which seasons to fetch) and again
+  inside `SidebarFilters`, which unconditionally re-rendered its own copy whose value was then
+  silently overwritten. Fixed: `SidebarFilters` now accepts the already-chosen seasons and skips
+  re-rendering that widget entirely.
+- **Bar-chart text collisions (real bug, not just cosmetic)**: on Biggest Movers, Sustained
+  Movers, and Matchup Changes, a bar whose magnitude approached the axis extreme had its
+  "outside" text label collide directly with the row's own y-axis category label (visually
+  confirmed via screenshot — e.g. "Julio Rodriguez · BB%" overlapping "-88.8pp" into an
+  unreadable smear). Fixed by padding every such chart's axis range beyond the data's min/max
+  so outside labels always have room.
+- **Heatmap text cramming with wide date ranges**: with many weeks selected, per-cell "%"
+  text and x-axis week labels smeared into each other. Fixed: per-cell text now suppresses
+  above ~20 weeks (color + hover tooltip still convey the value), and x-axis ticks thin out
+  to ~15 evenly-spaced labels instead of cramming every week in.
+- **KPI number truncation**: fixed the v6.4 overlap fix's side effect where long numbers
+  (e.g. "411,362") got ellipsis-truncated at narrow card widths. Now uses CSS container
+  queries (`cqi` units) so font size responds to each card's *actual* rendered width instead
+  of just overall viewport width — correctly handles any number of cards sharing a row.
+- Re dark theme/white-on-white reports: the `.streamlit/config.toml` dark theme and CSS from
+  v6.4 were verified correct in a real browser — actual root cause of contrast complaints
+  traced to the duplicate-sidebar and chart-collision bugs above, now fixed.
+- **New: Period Comparison tab** — pick two independent custom week ranges (e.g. weeks 1-10 vs
+  11-20) and get one wide table covering **every MLB batter** (whole league, independent of any
+  sidebar name filter) with the change in FB%/BB%/OS%, average velocity, and all 13 zones between
+  the two periods. Sort by any single column, either direction (e.g. "biggest Zone 9% decrease
+  first") — exactly the "biggest change to zone 9, positive or negative" workflow requested.
+  Full-width CSV export included.
 
 ## v6.4 — dark-theme contrast, chart visibility, spacing
 - **`.streamlit/config.toml` added** — sets an explicit dark theme (`textColor = "#f0f6fc"`) so

@@ -31,6 +31,7 @@ from compute import (
     generate_batter_insights,
     biggest_movers_leaderboard, latest_week_headline, batter_week_rank, batter_week_matchup_table,
     sustained_movers_leaderboard, team_rollup_table, generate_weekly_digest,
+    compute_period_comparison,
 )
 from ui_components import (
     SidebarFilters,
@@ -109,8 +110,7 @@ with st.spinner(f"⚾ {T('sidebar_app_name', lang=lang)}…"):
 
 raw_df["game_date"] = pd.to_datetime(raw_df["game_date"])
 
-filters = SidebarFilters(raw_df, lang=lang)
-filters.seasons = _seasons_sel
+filters = SidebarFilters(raw_df, lang=lang, seasons_override=_seasons_sel)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PRECOMPUTE
@@ -188,10 +188,10 @@ render_kpis([
 #  TABY
 # ─────────────────────────────────────────────────────────────────────────────
 (tab_profile, tab_report, tab_velo, tab_compare, tab_changes,
- tab_matchup, tab_ranking, tab_team) = st.tabs([
+ tab_matchup, tab_ranking, tab_team, tab_period) = st.tabs([
     T("tab_profile", lang=lang), T("tab_report", lang=lang), T("tab_velo", lang=lang),
     T("tab_compare", lang=lang), T("tab_changes", lang=lang), T("tab_matchup", lang=lang),
-    T("tab_ranking", lang=lang), T("tab_team", lang=lang),
+    T("tab_ranking", lang=lang), T("tab_team", lang=lang), T("tab_period", lang=lang),
 ])
 
 
@@ -720,7 +720,97 @@ with tab_team:
     else:
         digest_n = st.slider(T("digest_n_items", lang=lang), 3, 10, 5, key="digest_n")
         digest_text = generate_weekly_digest(bd, top_n=digest_n, lang=lang)
-        render_digest_block(digest_text)
+        render_digest_block(digest_text, lang=lang)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TAB 9 – PERIOD COMPARISON  (v6.5: custom week range A vs B, whole league)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_period:
+    section(T("period_header", lang=lang))
+    st.caption(T("period_caption", lang=lang))
+
+    # Whole league, independent of the sidebar's batter-name search filter — only
+    # bounded by season selection, same as the rest of the app's "raw" data.
+    if bw_all.empty:
+        empty()
+    else:
+        weeks_tbl = bw_all[["week_start", "week_label_short"]].drop_duplicates().sort_values("week_start")
+        week_starts = weeks_tbl["week_start"].tolist()
+        week_opts = weeks_tbl["week_label_short"].tolist()
+
+        if len(week_opts) < 2:
+            empty()
+        else:
+            pc1, pc2 = st.columns(2)
+            mid = max(1, len(week_opts) // 2)
+            with pc1:
+                st.markdown(T("period_1_label", lang=lang))
+                p1_range = st.select_slider(
+                    T("period_weeks_label", lang=lang), options=week_opts,
+                    value=(week_opts[0], week_opts[min(mid - 1, len(week_opts) - 1)]),
+                    key="period1_range",
+                )
+            with pc2:
+                st.markdown(T("period_2_label", lang=lang))
+                p2_default_start = week_opts[min(mid, len(week_opts) - 1)]
+                p2_range = st.select_slider(
+                    T("period_weeks_label", lang=lang), options=week_opts,
+                    value=(p2_default_start, week_opts[-1]),
+                    key="period2_range",
+                )
+
+            def _label_range_to_weeks(label_range):
+                i1, i2 = week_opts.index(label_range[0]), week_opts.index(label_range[1])
+                lo, hi = min(i1, i2), max(i1, i2)
+                return week_starts[lo:hi + 1]
+
+            weeks_p1 = _label_range_to_weeks(p1_range)
+            weeks_p2 = _label_range_to_weeks(p2_range)
+
+            min_pitches_period = st.slider(T("period_min_pitches", lang=lang), 5, 200, 30, key="period_min_pitches")
+
+            comp = compute_period_comparison(raw_df, bw_all, weeks_p1, weeks_p2, min_pitches=min_pitches_period)
+
+            if comp.empty:
+                empty(T("period_empty", lang=lang))
+            else:
+                delta_specs = [("d_velo", "Δ Velo (mph)")] + [
+                    (f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in CAT_COLS
+                ]
+                delta_cols = [c for c, _ in delta_specs]
+                delta_labels = {c: lbl for c, lbl in delta_specs}
+
+                sc1, sc2, sc3 = st.columns([2, 1, 1])
+                with sc1:
+                    sort_col = st.selectbox(T("period_sort_by", lang=lang), delta_cols,
+                                             format_func=lambda c: delta_labels[c], key="period_sort_col")
+                with sc2:
+                    sort_dir = st.radio(T("period_sort_dir", lang=lang),
+                                         [T("period_sort_desc", lang=lang), T("period_sort_asc", lang=lang)],
+                                         key="period_sort_dir")
+                with sc3:
+                    st.metric(T("period_n_batters", lang=lang), len(comp))
+
+                ascending = sort_dir == T("period_sort_asc", lang=lang)
+                shown_cols = ["batter_name", "team", "total_p1", "total_p2"] + delta_cols
+                sorted_tbl = comp.sort_values(sort_col, ascending=ascending)[shown_cols].reset_index(drop=True)
+
+                rename_map = {
+                    "batter_name": T("period_col_batter", lang=lang), "team": T("period_col_team", lang=lang),
+                    "total_p1": T("period_col_p1n", lang=lang), "total_p2": T("period_col_p2n", lang=lang),
+                    **delta_labels,
+                }
+                disp = sorted_tbl.rename(columns=rename_map)
+                delta_disp_cols = [delta_labels[c] for c in delta_cols]
+                fmt = {c: "{:+.1f}" for c in delta_disp_cols}
+
+                st.dataframe(
+                    disp.style.background_gradient(subset=delta_disp_cols, cmap="RdYlGn", vmin=-20, vmax=20)
+                       .format(fmt, na_rep="—"),
+                    use_container_width=True, height=600,
+                )
+                export_csv(comp, "period_comparison_full.csv", T("period_dl_csv", lang=lang))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
