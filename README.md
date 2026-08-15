@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.5)
+# MLB Pitch Mix Dashboard (v6.7)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,53 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v6.7 — 11 more roster corrections + OPS in Period Comparison
+- **Roster audit continued**, verified via web search (not guessed): Paul Goldschmidt
+  (Cardinals → Yankees), Kyle Tucker (Astros → Dodgers, via the Dec-2024 trade that sent
+  Isaac Paredes the other way to Houston), Alex Bregman (Astros → Cubs), Cody Bellinger
+  (→ re-signed Yankees), Pete Alonso (Mets → Orioles), Andrew McCutchen (Pirates → non-roster
+  minor-league invite elsewhere, removed), and the Cardinals' extensive rebuild — Nolan Arenado
+  (→ Diamondbacks), Willson Contreras (→ Red Sox), Brendan Donovan (→ Mariners). Note: this
+  covers every trade/signing surfaced by a 2026-offseason transactions sweep, which catches
+  the highest-impact moves, but — as before — is not a guarantee every one of the ~200 remaining
+  names is currently exactly correct. Live data mode remains the only fully-guaranteed-current
+  source, since it reads real names/teams directly from Statcast rather than any hardcoded list.
+- **New: OPS in Period Comparison.** Added real plate-appearance-outcome tracking (`is_pa_end`,
+  `pa_event`) alongside the existing pitch-level data — walks, HBP, sac flies, and hit type
+  (1B/2B/3B/HR), not just a crude "was it a hit" flag. For **real/live data**, this comes directly
+  from Statcast's own `events` column (exact, no approximation). For **synthetic data**, it's a
+  calibrated per-pitch approximation tuned to land around realistic MLB-average rates (~.700–.750
+  league OPS) — flagged in the code as an approximation since pitches aren't grouped into true
+  sequential at-bats in the generator.
+- Period Comparison now shows **OPS P1 / OPS P2 / Δ OPS** (plus Δ OBP, Δ SLG) as columns, and
+  **defaults the sort to Δ OPS** — directly answering "did this hitter's actual production get
+  better or worse over that stretch," not just whether pitchers changed their approach.
+- The existing "min. pitches per period" reliability filter (already in the tab) now also gates
+  the OPS columns, so a low-sample OPS swing can't misleadingly dominate the sort — same
+  guardrail requested for this feature, reusing the existing threshold rather than adding a
+  second one.
+
+## v6.6 — roster accuracy fixes + dataframe contrast bug
+- **Confirmed and fixed 3 roster errors** in the synthetic data (verified via web search, not
+  guessed): Bo Bichette moved from Toronto to the New York Mets (signed Jan 2026 — the synthetic
+  roster had his pre-free-agency team); Charlie Blackmon removed entirely (retired in **2024**,
+  this was a plain mistake on the model's part, not just staleness); Jeimer Candelario removed
+  from the Reds (DFA'd, currently outrighted to Triple-A, not an active MLB player).
+- **Standing caveat, not fully resolved**: the synthetic roster is a hardcoded ~208-name snapshot
+  built from training knowledge. Only the 3 specifically reported errors were verified and fixed —
+  the other ~205 names have **not** been individually re-verified against current rosters, and
+  more may be stale (trades, retirements, injuries happen constantly). The only way to get
+  guaranteed-current rosters is live data mode (the sidebar checkbox), which pulls real names and
+  real teams directly from Statcast rather than any hardcoded list.
+- **Real bug, not cosmetic**: dataframe cells using `.background_gradient()` (Period Comparison,
+  Rankings, Team Rollup, etc.) could render **invisible white-on-white text** on pale gradient
+  cells (e.g. light yellow near the middle of a color scale). Root cause: a `!important` CSS rule
+  added in v6.4 to force white text everywhere was overriding pandas' own contrast-aware text
+  color (which correctly picks dark text for light cells) with a blanket white — the opposite of
+  what that rule was supposed to protect against. Fixed by removing the `!important` override so
+  pandas' inline per-cell color can take effect; verified visually that pale cells now show dark
+  text and dark cells still show light text, across the full gradient range.
 
 ## v6.5.1 — full re-test pass (visual, all 9 tabs, all languages)
 Did a complete re-verification after v6.5: real-browser screenshots of every tab (not just

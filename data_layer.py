@@ -24,9 +24,34 @@ _BREAKING = {"SL", "CU", "KC", "ST"}
 _OFFSPEED = {"CH", "FS"}
 
 
-def _simulate_pitch_outcome(rng: np.random.Generator, pt: str, zone: int, strikes: int) -> dict:
-    """Proxy swing/contact/exit-velo model — NOT sequenced at-bats, just a per-pitch
-    approximation good enough to demo outcome-aware insights on synthetic data."""
+def _hit_type_from_exit_velo(rng: np.random.Generator, exit_velo: float) -> str:
+    """v6.7: given a ball in play that resulted in a hit, pick single/double/triple/HR
+    with realistic probabilities that scale with exit velocity."""
+    if exit_velo >= 103:
+        probs = {"home_run": 0.45, "double": 0.25, "triple": 0.05, "single": 0.25}
+    elif exit_velo >= 95:
+        probs = {"home_run": 0.20, "double": 0.30, "triple": 0.05, "single": 0.45}
+    elif exit_velo >= 85:
+        probs = {"home_run": 0.03, "double": 0.20, "triple": 0.03, "single": 0.74}
+    else:
+        probs = {"home_run": 0.00, "double": 0.08, "triple": 0.01, "single": 0.91}
+    keys = list(probs.keys())
+    return keys[rng.choice(len(keys), p=list(probs.values()))]
+
+
+def _simulate_pitch_outcome(rng: np.random.Generator, pt: str, zone: int, strikes: int,
+                             balls: int = 0) -> dict:
+    """
+    Proxy swing/contact/exit-velo model — NOT sequenced at-bats, just a per-pitch
+    approximation good enough to demo outcome-aware insights on synthetic data.
+
+    v6.7: also derives a plate-appearance-ending event (walk/strikeout/HBP/hit-type/out)
+    consistent with the swing outcome, needed to compute real OBP/SLG/OPS. Since pitches
+    aren't grouped into true sequential at-bats in this synthetic generator, PA-ending
+    flags are a per-pitch approximation (calibrated to realistic league-average rates)
+    rather than a literal count-by-count simulation — fine for aggregate rate stats,
+    but don't read too much into any single row as "the" pitch that ended a real PA.
+    """
     in_zone = zone <= 9
     two_strike = strikes == 2
 
@@ -39,6 +64,8 @@ def _simulate_pitch_outcome(rng: np.random.Generator, pt: str, zone: int, strike
     in_play = False
     exit_velo = np.nan
     hit = False
+    is_pa_end = False
+    pa_event: str | None = None
 
     if swing:
         whiff_base = 0.30 if pt in _BREAKING else (0.32 if pt in _OFFSPEED else 0.18)
@@ -46,7 +73,10 @@ def _simulate_pitch_outcome(rng: np.random.Generator, pt: str, zone: int, strike
             whiff_base += 0.10
         whiff = rng.random() < whiff_base
 
-        if not whiff:
+        if whiff:
+            if two_strike:
+                is_pa_end, pa_event = True, "strikeout"
+        else:
             foul = rng.random() < 0.55
             in_play = not foul
             if in_play:
@@ -54,8 +84,23 @@ def _simulate_pitch_outcome(rng: np.random.Generator, pt: str, zone: int, strike
                 exit_velo = float(np.clip(rng.normal(velo_mean, 11.0), 40, 118))
                 hit_prob = 0.50 if exit_velo >= 95 else (0.32 if exit_velo >= 85 else 0.18)
                 hit = rng.random() < hit_prob
+                is_pa_end = True
+                if hit:
+                    pa_event = _hit_type_from_exit_velo(rng, exit_velo)
+                else:
+                    pa_event = "sac_fly" if rng.random() < 0.03 else "field_out"
+    else:
+        # v6.7: not modeled as a true sequential count, but use the already-sampled
+        # (balls, strikes) for this pitch to approximate walk/called-K rates.
+        if rng.random() < 0.003:
+            is_pa_end, pa_event = True, "hit_by_pitch"
+        elif two_strike and rng.random() < 0.30:
+            is_pa_end, pa_event = True, "strikeout"
+        elif balls == 3 and rng.random() < 0.78:
+            is_pa_end, pa_event = True, "walk"
 
-    return dict(swing=swing, whiff=whiff, in_play=in_play, exit_velo=exit_velo, hit=hit)
+    return dict(swing=swing, whiff=whiff, in_play=in_play, exit_velo=exit_velo, hit=hit,
+                is_pa_end=is_pa_end, pa_event=pa_event)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -140,7 +185,7 @@ def _gen_season(year: int) -> pd.DataFrame:
                     velo_mean_wk = velo_mean + velo_drift[pitcher][week_num % 4]
                     release_speed = float(np.clip(rng.normal(velo_mean_wk, velo_std), 60, 105))
 
-                    outcome = _simulate_pitch_outcome(rng, pt, zone, strikes)
+                    outcome = _simulate_pitch_outcome(rng, pt, zone, strikes, balls)
 
                     rows.append({
                         "game_date":    game_date,
@@ -160,6 +205,8 @@ def _gen_season(year: int) -> pd.DataFrame:
                         "in_play":      outcome["in_play"],
                         "exit_velo":    outcome["exit_velo"],
                         "hit":          outcome["hit"],
+                        "is_pa_end":    outcome["is_pa_end"],
+                        "pa_event":     outcome["pa_event"],
                     })
 
     df = pd.DataFrame(rows)
@@ -276,6 +323,20 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
                 df_pb["exit_velo"] = pd.to_numeric(df_pb.get("launch_speed"), errors="coerce")
                 events = df_pb.get("events", pd.Series("", index=df_pb.index)).fillna("")
                 df_pb["hit"] = events.isin(["single", "double", "triple", "home_run"])
+
+                # v6.7: real per-PA outcome, straight from Statcast's own `events` column —
+                # no approximation needed here (unlike the synthetic path), since Statcast
+                # already marks exactly which pitch ends a plate appearance and what happened.
+                df_pb["is_pa_end"] = events != ""
+                _pa_event_map = {
+                    "single": "single", "double": "double", "triple": "triple",
+                    "home_run": "home_run", "walk": "walk", "hit_by_pitch": "hit_by_pitch",
+                    "sac_fly": "sac_fly", "sac_fly_double_play": "sac_fly",
+                    "strikeout": "strikeout", "strikeout_double_play": "strikeout",
+                }
+                df_pb["pa_event"] = events.map(_pa_event_map)
+                df_pb.loc[df_pb["is_pa_end"] & df_pb["pa_event"].isna(), "pa_event"] = "field_out"
+
                 if "strikes" in df_pb.columns:
                     df_pb["two_strike"] = pd.to_numeric(df_pb["strikes"], errors="coerce") == 2
                 else:
@@ -290,7 +351,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
 
                 keep = ["game_date", "pitcher_name", "batter_name", "batter_team", "pitch_type", "zone",
                         "season", "p_throws", "balls", "strikes", "two_strike", "release_speed",
-                        "swing", "whiff", "in_play", "exit_velo", "hit"]
+                        "swing", "whiff", "in_play", "exit_velo", "hit", "is_pa_end", "pa_event"]
                 pb_frames.append(_optimize_dtypes(df_pb[keep]))
 
             if pb_frames:
@@ -317,6 +378,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
         "batter_team": "Unknown", "p_throws": "R", "balls": np.nan, "strikes": np.nan,
         "two_strike": False, "release_speed": np.nan, "swing": False, "whiff": False,
         "in_play": False, "exit_velo": np.nan, "hit": False,
+        "is_pa_end": False, "pa_event": None,
     }
     for col, default in v6_defaults.items():
         if col not in df_out.columns:
@@ -347,7 +409,7 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     for c in ("balls", "strikes"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    bool_cols = ["two_strike", "swing", "whiff", "in_play", "hit"]
+    bool_cols = ["two_strike", "swing", "whiff", "in_play", "hit", "is_pa_end"]
     for c in bool_cols:
         if c in df.columns:
             df[c] = df[c].fillna(False).astype(bool)

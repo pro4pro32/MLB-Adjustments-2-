@@ -174,14 +174,14 @@ PITCHER_PROFILES: dict[str, dict] = {
 # ── v6.3: Pełna liga — 30 drużyn MLB, ~7 batterów per drużyna (~210 łącznie) ─
 TEAM_ROSTERS: dict[str, list[str]] = {
     "Baltimore Orioles":     ["Adley Rutschman", "Gunnar Henderson", "Ryan Mountcastle", "Anthony Santander",
-                                "Cedric Mullins", "Jordan Westburg", "Colton Cowser"],
+                                "Cedric Mullins", "Jordan Westburg", "Pete Alonso"],
     "Boston Red Sox":        ["Rafael Devers", "Trevor Story", "Jarren Duran", "Wilyer Abreu",
-                                "Triston Casas", "Masataka Yoshida", "Ceddanne Rafaela"],
+                                "Triston Casas", "Masataka Yoshida", "Ceddanne Rafaela", "Willson Contreras"],
     "New York Yankees":      ["Aaron Judge", "Giancarlo Stanton", "Anthony Volpe", "Austin Wells",
-                                "Jazz Chisholm Jr.", "Gleyber Torres", "Alex Verdugo"],
-    "Tampa Bay Rays":        ["Yandy Diaz", "Jose Siri", "Brandon Lowe", "Isaac Paredes",
+                                "Jazz Chisholm Jr.", "Cody Bellinger", "Paul Goldschmidt"],
+    "Tampa Bay Rays":        ["Yandy Diaz", "Jose Siri", "Brandon Lowe",
                                 "Josh Lowe", "Junior Caminero", "Richie Palacios"],
-    "Toronto Blue Jays":     ["Vladimir Guerrero Jr.", "Bo Bichette", "George Springer", "Daulton Varsho",
+    "Toronto Blue Jays":     ["Vladimir Guerrero Jr.", "George Springer", "Daulton Varsho",
                                 "Alejandro Kirk", "Ernie Clement", "Addison Barger"],
     "Chicago White Sox":     ["Luis Robert Jr.", "Andrew Vaughn", "Gavin Sheets", "Zach Remillard",
                                 "Nicky Lopez", "Braden Shewmake", "Lenyn Sosa"],
@@ -193,42 +193,41 @@ TEAM_ROSTERS: dict[str, list[str]] = {
                                 "Maikel Garcia", "Michael Massey", "Hunter Renfroe"],
     "Minnesota Twins":       ["Byron Buxton", "Carlos Correa", "Royce Lewis", "Ryan Jeffers",
                                 "Matt Wallner", "Willi Castro", "Trevor Larnach"],
-    "Houston Astros":        ["Jose Altuve", "Yordan Alvarez", "Alex Bregman", "Kyle Tucker",
+    "Houston Astros":        ["Jose Altuve", "Yordan Alvarez", "Isaac Paredes",
                                 "Yainer Diaz", "Jeremy Pena", "Chas McCormick"],
     "Los Angeles Angels":    ["Mike Trout", "Anthony Rendon", "Taylor Ward", "Logan O'Hoppe",
                                 "Zach Neto", "Jo Adell", "Nolan Schanuel"],
     "Athletics":             ["Brent Rooker", "Zack Gelof", "JJ Bleday", "Shea Langeliers",
                                 "Lawrence Butler", "Tyler Soderstrom", "Seth Brown"],
     "Seattle Mariners":      ["Julio Rodriguez", "Cal Raleigh", "J.P. Crawford", "Josh Rojas",
-                                "Mitch Garver", "Luke Raley", "Victor Robles"],
+                                "Mitch Garver", "Brendan Donovan", "Victor Robles"],
     "Texas Rangers":         ["Corey Seager", "Marcus Semien", "Adolis Garcia", "Josh Jung",
                                 "Wyatt Langford", "Jonah Heim", "Ezequiel Duran"],
     "Atlanta Braves":        ["Ronald Acuna Jr.", "Austin Riley", "Matt Olson", "Ozzie Albies",
                                 "Sean Murphy", "Michael Harris II", "Orlando Arcia"],
     "Miami Marlins":         ["Jesus Sanchez", "Jake Burger", "Xavier Edwards", "Connor Norby",
                                 "Griffin Conine", "Nick Fortes", "Kyle Stowers"],
-    "New York Mets":         ["Juan Soto", "Francisco Lindor", "Pete Alonso", "Brandon Nimmo",
-                                "Mark Vientos", "Francisco Alvarez", "Starling Marte"],
+    "New York Mets":         ["Juan Soto", "Francisco Lindor", "Brandon Nimmo",
+                                "Mark Vientos", "Francisco Alvarez", "Starling Marte", "Bo Bichette"],
     "Philadelphia Phillies": ["Bryce Harper", "Trea Turner", "Kyle Schwarber", "Alec Bohm",
                                 "J.T. Realmuto", "Nick Castellanos", "Bryson Stott"],
     "Washington Nationals":  ["CJ Abrams", "James Wood", "Luis Garcia Jr.", "Keibert Ruiz",
                                 "Jacob Young", "Joey Meneses", "Alex Call"],
     "Chicago Cubs":          ["Seiya Suzuki", "Dansby Swanson", "Ian Happ", "Nico Hoerner",
-                                "Michael Busch", "Christopher Morel", "Cody Bellinger"],
+                                "Michael Busch", "Christopher Morel", "Alex Bregman"],
     "Cincinnati Reds":       ["Elly De La Cruz", "Spencer Steer", "Matt McLain", "TJ Friedl",
-                                "Christian Encarnacion-Strand", "Jonathan India", "Jeimer Candelario"],
+                                "Christian Encarnacion-Strand", "Jonathan India"],
     "Milwaukee Brewers":     ["William Contreras", "Christian Yelich", "Willy Adames", "Jackson Chourio",
                                 "Brice Turang", "Sal Frelick", "Rhys Hoskins"],
     "Pittsburgh Pirates":    ["Oneil Cruz", "Bryan Reynolds", "Ke'Bryan Hayes", "Joey Bart",
-                                "Jack Suwinski", "Nick Gonzales", "Andrew McCutchen"],
-    "St. Louis Cardinals":   ["Nolan Arenado", "Paul Goldschmidt", "Willson Contreras", "Masyn Winn",
-                                "Brendan Donovan", "Lars Nootbaar", "Alec Burleson"],
+                                "Jack Suwinski", "Nick Gonzales"],
+    "St. Louis Cardinals":   ["Masyn Winn", "Lars Nootbaar", "Alec Burleson"],
     "Arizona Diamondbacks":  ["Corbin Carroll", "Ketel Marte", "Christian Walker", "Gabriel Moreno",
-                                "Eugenio Suarez", "Lourdes Gurriel Jr.", "Jake McCarthy"],
+                                "Eugenio Suarez", "Lourdes Gurriel Jr.", "Jake McCarthy", "Nolan Arenado"],
     "Colorado Rockies":      ["Ryan McMahon", "Ezequiel Tovar", "Brenton Doyle", "Elias Diaz",
-                                "Charlie Blackmon", "Nolan Jones", "Michael Toglia"],
+                                "Nolan Jones", "Michael Toglia"],
     "Los Angeles Dodgers":   ["Shohei Ohtani", "Mookie Betts", "Freddie Freeman", "Will Smith",
-                                "Teoscar Hernandez", "Max Muncy", "Tommy Edman"],
+                                "Teoscar Hernandez", "Max Muncy", "Kyle Tucker"],
     "San Diego Padres":      ["Fernando Tatis Jr.", "Manny Machado", "Xander Bogaerts", "Jackson Merrill",
                                 "Luis Arraez", "Jake Cronenworth", "Jurickson Profar"],
     "San Francisco Giants":  ["Matt Chapman", "Jung Hoo Lee", "Heliot Ramos", "Patrick Bailey",
@@ -358,7 +357,12 @@ div[data-testid="stDataFrame"] {
     overflow: hidden !important;
 }
 /* v6.4: force readable white text inside dataframes/tables regardless of pandas Styler output */
-div[data-testid="stDataFrame"] * { color: var(--text) !important; }
+/* v6.6 FIX: previously forced white text everywhere in dataframes with !important —
+   this broke pandas' own contrast-aware text color from .background_gradient(), which
+   picks dark text for light/pale cells (e.g. pale yellow/green) and light text for dark
+   cells. Inline styles from pandas' Styler beat a plain (non-!important) rule, so this
+   now only sets a sensible DEFAULT for cells that have no Styler color of their own. */
+div[data-testid="stDataFrame"] { color: var(--text); }
 div[data-testid="stDataFrame"] table { font-variant-numeric: tabular-nums; }
 div[data-testid="stInfo"]    { background: #0d2137 !important; border-color: var(--blue) !important; color: var(--text) !important; }
 div[data-testid="stWarning"] { background: #2d1f00 !important; border-color: var(--yellow) !important; color: var(--text) !important; }

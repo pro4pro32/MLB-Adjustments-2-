@@ -722,9 +722,52 @@ def compute_period_comparison(raw_df: pd.DataFrame, bw: pd.DataFrame,
         key = _cat_key(c)
         merged[f"d_{key}"] = (merged[f"{c}_p2"] - merged[f"{c}_p1"]).round(1)
 
+    # v6.7: OPS (OBP + SLG) per period, from real plate-appearance-ending events
+    # (is_pa_end / pa_event) — walks, HBP, sac flies, and hit type all counted properly,
+    # not just a crude hits/pitches ratio. Real Statcast data uses actual game events;
+    # synthetic data uses a calibrated per-pitch approximation (see data_layer.py).
+    ops1 = _compute_ops_for_period(d, weeks_p1).add_suffix("_p1").rename(columns={"batter_name_p1": "batter_name"})
+    ops2 = _compute_ops_for_period(d, weeks_p2).add_suffix("_p2").rename(columns={"batter_name_p2": "batter_name"})
+    merged = merged.merge(ops1, on="batter_name", how="left").merge(ops2, on="batter_name", how="left")
+    merged["d_ops"] = (merged["ops_p2"] - merged["ops_p1"]).round(3)
+    merged["d_obp"] = (merged["obp_p2"] - merged["obp_p1"]).round(3)
+    merged["d_slg"] = (merged["slg_p2"] - merged["slg_p1"]).round(3)
+
     merged["team"] = merged["batter_name"].map(TEAM_OF_BATTER).fillna("Unknown")
     merged = merged[(merged["total_p1"] >= min_pitches) & (merged["total_p2"] >= min_pitches)]
     return merged.reset_index(drop=True)
+
+
+def _compute_ops_for_period(d: pd.DataFrame, weeks: list) -> pd.DataFrame:
+    """Aggregates OBP/SLG/OPS per batter for one period from real PA-ending events.
+    `d` must already have a `week_start` column (see compute_period_comparison)."""
+    if "is_pa_end" not in d.columns:
+        return pd.DataFrame(columns=["batter_name", "pa", "obp", "slg", "ops"])
+    sub = d[d["week_start"].isin(weeks) & d["is_pa_end"] & d["pa_event"].notna()]
+    if sub.empty:
+        return pd.DataFrame(columns=["batter_name", "pa", "obp", "slg", "ops"])
+
+    def _agg(g: pd.DataFrame) -> pd.Series:
+        ev = g["pa_event"]
+        pa = len(g)
+        bb  = (ev == "walk").sum()
+        hbp = (ev == "hit_by_pitch").sum()
+        sf  = (ev == "sac_fly").sum()
+        s1  = (ev == "single").sum()
+        s2  = (ev == "double").sum()
+        s3  = (ev == "triple").sum()
+        hr  = (ev == "home_run").sum()
+        h   = s1 + s2 + s3 + hr
+        ab  = pa - bb - hbp - sf
+        tb  = s1 + 2 * s2 + 3 * s3 + 4 * hr
+        obp = (h + bb + hbp) / (ab + bb + hbp + sf) if (ab + bb + hbp + sf) > 0 else np.nan
+        slg = tb / ab if ab > 0 else np.nan
+        return pd.Series({"pa": pa, "obp": round(obp, 3) if pd.notna(obp) else np.nan,
+                           "slg": round(slg, 3) if pd.notna(slg) else np.nan})
+
+    out = sub.groupby("batter_name").apply(_agg, include_groups=False).reset_index()
+    out["ops"] = (out["obp"] + out["slg"]).round(3)
+    return out
 
 
 def generate_batter_insights(bd_batter: pd.DataFrame, batter: str, lang: str = "en") -> list[str]:

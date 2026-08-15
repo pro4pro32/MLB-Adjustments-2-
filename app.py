@@ -775,7 +775,8 @@ with tab_period:
             if comp.empty:
                 empty(T("period_empty", lang=lang))
             else:
-                delta_specs = [("d_velo", "Δ Velo (mph)")] + [
+                delta_specs = [("d_ops", "Δ OPS"), ("d_obp", "Δ OBP"), ("d_slg", "Δ SLG"),
+                                ("d_velo", "Δ Velo (mph)")] + [
                     (f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in CAT_COLS
                 ]
                 delta_cols = [c for c, _ in delta_specs]
@@ -784,7 +785,8 @@ with tab_period:
                 sc1, sc2, sc3 = st.columns([2, 1, 1])
                 with sc1:
                     sort_col = st.selectbox(T("period_sort_by", lang=lang), delta_cols,
-                                             format_func=lambda c: delta_labels[c], key="period_sort_col")
+                                             format_func=lambda c: delta_labels[c], key="period_sort_col",
+                                             index=0)
                 with sc2:
                     sort_dir = st.radio(T("period_sort_dir", lang=lang),
                                          [T("period_sort_desc", lang=lang), T("period_sort_asc", lang=lang)],
@@ -793,20 +795,30 @@ with tab_period:
                     st.metric(T("period_n_batters", lang=lang), len(comp))
 
                 ascending = sort_dir == T("period_sort_asc", lang=lang)
-                shown_cols = ["batter_name", "team", "total_p1", "total_p2"] + delta_cols
+                ops_abs_cols = ["ops_p1", "ops_p2"]
+                shown_cols = ["batter_name", "team", "total_p1", "total_p2"] + ops_abs_cols + delta_cols
                 sorted_tbl = comp.sort_values(sort_col, ascending=ascending)[shown_cols].reset_index(drop=True)
 
+                ops_abs_labels = {"ops_p1": T("period_col_opsp1", lang=lang), "ops_p2": T("period_col_opsp2", lang=lang)}
                 rename_map = {
                     "batter_name": T("period_col_batter", lang=lang), "team": T("period_col_team", lang=lang),
                     "total_p1": T("period_col_p1n", lang=lang), "total_p2": T("period_col_p2n", lang=lang),
-                    **delta_labels,
+                    **ops_abs_labels, **delta_labels,
                 }
                 disp = sorted_tbl.rename(columns=rename_map)
+                ops_abs_disp_cols = [ops_abs_labels[c] for c in ops_abs_cols]
                 delta_disp_cols = [delta_labels[c] for c in delta_cols]
-                fmt = {c: "{:+.1f}" for c in delta_disp_cols}
+                ops_delta_disp_cols = [delta_labels[c] for c in ("d_ops", "d_obp", "d_slg")]
+                pct_delta_disp_cols = [c for c in delta_disp_cols if c not in ops_delta_disp_cols]
+
+                fmt = {c: "{:+.1f}" for c in pct_delta_disp_cols}
+                fmt.update({c: "{:+.3f}" for c in ops_delta_disp_cols})
+                fmt.update({c: "{:.3f}" for c in ops_abs_disp_cols})
 
                 st.dataframe(
-                    disp.style.background_gradient(subset=delta_disp_cols, cmap="RdYlGn", vmin=-20, vmax=20)
+                    disp.style
+                       .background_gradient(subset=ops_delta_disp_cols, cmap="RdYlGn", vmin=-0.3, vmax=0.3)
+                       .background_gradient(subset=pct_delta_disp_cols, cmap="RdYlGn", vmin=-20, vmax=20)
                        .format(fmt, na_rep="—"),
                     use_container_width=True, height=600,
                 )
