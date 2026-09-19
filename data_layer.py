@@ -235,6 +235,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     """
     frames: list[pd.DataFrame] = []
     source = "syntetyczne"
+    live_fetch_range: tuple | None = None
 
     for year in sorted(seasons):
         p = Path(f"data/pitch_mix_{year}.parquet")
@@ -274,6 +275,10 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
                 fetch_start  = max(season_start, fetch_end - pd.Timedelta(days=live_days_back))
                 if fetch_start >= fetch_end:
                     continue
+                if live_fetch_range is None:
+                    live_fetch_range = (fetch_start, fetch_end)
+                else:
+                    live_fetch_range = (min(live_fetch_range[0], fetch_start), max(live_fetch_range[1], fetch_end))
 
                 try:
                     df_pb = statcast(start_dt=fetch_start.strftime("%Y-%m-%d"),
@@ -356,7 +361,10 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
 
             if pb_frames:
                 frames.extend(pb_frames)
-                source = "Statcast (live, ostatnie dni)"
+                if live_fetch_range is not None:
+                    source = f"Statcast (live, {live_fetch_range[0].date()} to {live_fetch_range[1].date()})"
+                else:
+                    source = "Statcast (live)"
         except ImportError:
             st.warning("pybaseball nie jest zainstalowany — pomijam live-fetch, używam danych syntetycznych.")
         except Exception as e:

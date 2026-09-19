@@ -126,9 +126,15 @@ velo_all = pc["velo_weekly"]
 pc_ms    = pc["perf_ms"]
 
 season_str = ", ".join(str(y) for y in sorted(filters.seasons))
-_source_label = {"parquet": T("source_parquet", lang=lang), "syntetyczne": T("source_synthetic", lang=lang)}.get(
-    data_source, T("source_live", lang=lang) if "Statcast" in data_source else data_source
-)
+if data_source in ("parquet", "syntetyczne"):
+    _source_label = {"parquet": T("source_parquet", lang=lang), "syntetyczne": T("source_synthetic", lang=lang)}[data_source]
+elif "Statcast" in data_source:
+    # data_source looks like "Statcast (live, 2026-08-15 to 2026-08-29)" — show the
+    # actual fetched window as-is so it's clear exactly how current the data is,
+    # rather than a generic "live" label that hides that detail.
+    _source_label = data_source
+else:
+    _source_label = data_source
 src_icon = "📂" if data_source == "parquet" else ("🌐" if "Statcast" in data_source else "🎲")
 st.markdown(
     f'<span class="perf-pill">' +

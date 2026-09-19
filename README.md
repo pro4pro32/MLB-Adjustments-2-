@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.7)
+# MLB Pitch Mix Dashboard (v6.8)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,26 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v6.8 — 13 more roster corrections + live-data freshness display + decision to go live-first
+- **13 more confirmed corrections**, found via a real Fangraphs Roster Resource fetch (Orioles)
+  plus a dedicated 2026 trade-deadline (Aug 3) search: Adley Rutschman (BAL→BOS), Anthony Rendon
+  (removed — not playing in 2026, recovering from hip surgery), Ryan Mountcastle (removed — 60-day
+  IL, fractured foot) and Jordan Westburg (removed — Tommy John surgery, season-ending), Heliot
+  Ramos (SF→NYY), Luis Arraez (SD→PHI), Lars Nootbaar (STL→ARI), Luis Garcia Jr. (WSH→NYY),
+  Taylor Ward (LAA→SEA), Jack Suwinski (PIT→TB), Connor Norby (MIA→COL). Total across this whole
+  conversation: 24 corrections found and fixed. That volume — every single team spot-checked
+  turned up multiple errors — is exactly why we decided together to make **live data the
+  primary path** going forward rather than continuing to patch the hardcoded snapshot.
+- **Live-fetch freshness is now visible**: the perf-pill at the top of the app shows the actual
+  fetched date range (e.g. "Statcast (live, 2026-08-15 to 2026-08-29)") instead of a generic
+  "live" label, so it's always clear exactly how current the loaded data is.
+- **Clarifying how "live" actually behaves** (asked this session): the app does **not**
+  continuously update in the background while a tab sits open. Data refreshes only when the
+  app actually reruns (page reload, or Streamlit's ~1-hour data cache expiring and you interact
+  again) — at which point live mode re-fetches "the last N days as of right now," so a fresh
+  reload does pull newly-played games automatically. Synthetic data, by contrast, is a frozen
+  fixed-date-range dataset that never tracks real calendar time at all, live or not.
 
 ## v6.7 — 11 more roster corrections + OPS in Period Comparison
 - **Roster audit continued**, verified via web search (not guessed): Paul Goldschmidt
