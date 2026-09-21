@@ -710,7 +710,31 @@ def compute_period_comparison(raw_df: pd.DataFrame, bw: pd.DataFrame,
     # since bw/batter_weekly doesn't carry velocity (that's tracked per pitch-type elsewhere)
     d = raw_df.copy()
     d["week_start"] = floor_to_monday(d["game_date"])
-    d = d.dropna(subset=["release_speed"])
+
+    # v6.9: resolve each batter's team SEPARATELY per period, from the actual pitch-level
+    # data — not a single static lookup. A player traded between the two periods (or even
+    # mid-period) will show a different team_p1 vs team_p2 instead of one (possibly wrong,
+    # possibly just outdated) team for the whole comparison. Only really varies with real/
+    # live data — synthetic data assigns one fixed team for the whole season, since it
+    # doesn't simulate in-season trades.
+    def _team_for_period(weeks) -> pd.Series:
+        sub = d[d["week_start"].isin(weeks)]
+        if sub.empty or "batter_team" not in sub.columns:
+            return pd.Series(dtype=object)
+        return sub.groupby("batter_name")["batter_team"].agg(
+            lambda s: s.mode().iloc[0] if not s.mode().empty else "Unknown"
+        )
+
+    team_p1 = _team_for_period(weeks_p1).rename("team_p1")
+    team_p2 = _team_for_period(weeks_p2).rename("team_p2")
+    merged = merged.merge(team_p1, on="batter_name", how="left").merge(team_p2, on="batter_name", how="left")
+    merged["team_p1"] = merged["team_p1"].fillna(merged["batter_name"].map(TEAM_OF_BATTER)).fillna("Unknown")
+    merged["team_p2"] = merged["team_p2"].fillna(merged["batter_name"].map(TEAM_OF_BATTER)).fillna("Unknown")
+    merged["team"] = np.where(
+        merged["team_p1"] == merged["team_p2"], merged["team_p1"],
+        merged["team_p1"] + " / " + merged["team_p2"],
+    )
+
     velo1 = d[d["week_start"].isin(weeks_p1)].groupby("batter_name")["release_speed"].mean().rename("avg_velo_p1")
     velo2 = d[d["week_start"].isin(weeks_p2)].groupby("batter_name")["release_speed"].mean().rename("avg_velo_p2")
     merged = merged.merge(velo1, on="batter_name", how="left").merge(velo2, on="batter_name", how="left")
@@ -733,9 +757,25 @@ def compute_period_comparison(raw_df: pd.DataFrame, bw: pd.DataFrame,
     merged["d_obp"] = (merged["obp_p2"] - merged["obp_p1"]).round(3)
     merged["d_slg"] = (merged["slg_p2"] - merged["slg_p1"]).round(3)
 
-    merged["team"] = merged["batter_name"].map(TEAM_OF_BATTER).fillna("Unknown")
     merged = merged[(merged["total_p1"] >= min_pitches) & (merged["total_p2"] >= min_pitches)]
     return merged.reset_index(drop=True)
+
+
+def compute_period_correlations(comp: pd.DataFrame, delta_cols: list[str]) -> pd.DataFrame:
+    """
+    v6.9: correlation matrix among ALL the delta columns in a period-comparison table
+    (Δ OPS, Δ OBP, Δ SLG, Δ Velo, Δ FB/BB/OS%, Δ zone1..14%) across every batter that
+    passed the reliability filter — surfaces patterns like "does more Zone 9% coincide
+    with lower OPS" across the league, not just for one player.
+    """
+    cols = [c for c in delta_cols if c in comp.columns]
+    if comp.empty or len(cols) < 2:
+        return pd.DataFrame()
+    sub = comp[cols].apply(pd.to_numeric, errors="coerce")
+    sub = sub.loc[:, sub.notna().sum() >= 3]  # need at least a few real values to correlate
+    if sub.shape[1] < 2:
+        return pd.DataFrame()
+    return sub.corr(method="pearson").round(2)
 
 
 def _compute_ops_for_period(d: pd.DataFrame, weeks: list) -> pd.DataFrame:

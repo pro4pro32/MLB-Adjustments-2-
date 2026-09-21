@@ -126,9 +126,15 @@ def _gen_season(year: int) -> pd.DataFrame:
     """Generuje pitch-by-pitch dla jednego sezonu z realistycznymi wzorcami."""
     rng = np.random.default_rng(year * 17 + 3)
 
-    end_mo, end_dy = (7, 15) if year >= 2026 else (10, 1)
     start = pd.Timestamp(f"{year}-04-01")
-    end   = pd.Timestamp(f"{year}-{end_mo:02d}-{end_dy:02d}")
+    season_close = pd.Timestamp(f"{year}-10-01")
+    # v6.9 FIX: for the current in-progress season, cap at today's real date instead
+    # of a hardcoded stand-in (was "2026-07-15", which froze in place once written and
+    # made the dataset look stuck in mid-July no matter how much later it's actually run).
+    today = pd.Timestamp.today().normalize()
+    end = min(season_close, today) if year == today.year else season_close
+    if end <= start:
+        end = start + pd.Timedelta(days=7)  # safety net if run before a season starts
 
     inactive   = INACTIVE_BY_SEASON.get(year, set())
     active_bats = [b for b in BATTERS if b not in inactive]
@@ -269,7 +275,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
                 # v6.1: BOUNDED window instead of the full ~180-day season — this is
                 # the actual fix for the OOM crash, not just a try/except.
                 season_start = pd.Timestamp(f"{year}-04-01")
-                season_end   = pd.Timestamp(f"{year}-07-15" if year >= 2026 else f"{year}-10-01")
+                season_end   = pd.Timestamp(f"{year}-10-01")
                 today        = pd.Timestamp.today().normalize()
                 fetch_end    = min(season_end, today)
                 fetch_start  = max(season_start, fetch_end - pd.Timedelta(days=live_days_back))

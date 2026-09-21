@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.8)
+# MLB Pitch Mix Dashboard (v6.9)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,27 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v6.9 — stale-season-date bug fix, correlation matrix, per-period teams
+- **Root cause of "why do I only see week 29" fixed**: the synthetic season generator (and
+  the live-fetch window) had a hardcoded end date of "2026-07-15" — a stand-in for "today" at
+  the time that code was written, which then froze in place. It now uses the real current date
+  every time it runs, so the in-progress season keeps extending as real time passes (confirmed:
+  went from stopping at week ~15 to week 24+ after the fix, with the actual current date shown
+  in the sidebar).
+- **Δ FB%/Δ BB%/Δ OS% reordered to the front** of the Period Comparison table (right after
+  team/pitch counts, before OPS/velocity/zones) — no more scrolling required to see them.
+- **Clarified what OS% means**, directly in the tab now: FB% = fastballs, BB% = breaking balls
+  (SL/CU/KC/ST), OS% = offspeed (CH/FS — changeups/splitters). None of these are outcome stats;
+  OPS/OBP/SLG are the columns for that.
+- **New: Correlation Matrix** below the Period Comparison table — Pearson correlation between
+  every pair of Δ columns, across every batter shown, as a heatmap. Surfaces patterns like "does
+  a Δ Zone 9% move tend to go with a Δ OPS move" at a glance, with CSV export.
+- **New: per-period team resolution** — "Team" is now computed separately for period 1 and
+  period 2 from the actual pitch-level data, not one static lookup. If a player's team differs
+  between the two periods, it shows as "TeamA / TeamB". Note: this only actually varies with
+  real/live data (mid-season trades); synthetic data assigns one fixed team for the whole
+  season, so synthetic mode will always show a single team even with this fix in place.
 
 ## v6.8 — 13 more roster corrections + live-data freshness display + decision to go live-first
 - **13 more confirmed corrections**, found via a real Fangraphs Roster Resource fetch (Orioles)

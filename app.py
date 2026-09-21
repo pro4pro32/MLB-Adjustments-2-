@@ -31,7 +31,7 @@ from compute import (
     generate_batter_insights,
     biggest_movers_leaderboard, latest_week_headline, batter_week_rank, batter_week_matchup_table,
     sustained_movers_leaderboard, team_rollup_table, generate_weekly_digest,
-    compute_period_comparison,
+    compute_period_comparison, compute_period_correlations,
 )
 from ui_components import (
     SidebarFilters,
@@ -781,12 +781,16 @@ with tab_period:
             if comp.empty:
                 empty(T("period_empty", lang=lang))
             else:
-                delta_specs = [("d_ops", "Δ OPS"), ("d_obp", "Δ OBP"), ("d_slg", "Δ SLG"),
-                                ("d_velo", "Δ Velo (mph)")] + [
-                    (f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in CAT_COLS
-                ]
+                # v6.9: FB%/BB%/OS% first (most-asked-about, no scrolling needed), then
+                # OPS/velocity, then the 13 zones.
+                pitch_mix_specs = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in PITCH_CAT_COLS]
+                zone_specs = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in ZONE_CAT_COLS]
+                delta_specs = pitch_mix_specs + [("d_ops", "Δ OPS"), ("d_obp", "Δ OBP"), ("d_slg", "Δ SLG"),
+                                                   ("d_velo", "Δ Velo (mph)")] + zone_specs
                 delta_cols = [c for c, _ in delta_specs]
                 delta_labels = {c: lbl for c, lbl in delta_specs}
+
+                st.caption(T("period_os_clarify", lang=lang))
 
                 sc1, sc2, sc3 = st.columns([2, 1, 1])
                 with sc1:
@@ -829,6 +833,31 @@ with tab_period:
                     use_container_width=True, height=600,
                 )
                 export_csv(comp, "period_comparison_full.csv", T("period_dl_csv", lang=lang))
+
+                st.divider()
+                section(T("period_corr_header", lang=lang))
+                st.caption(T("period_corr_caption", lang=lang))
+                corr = compute_period_correlations(comp, delta_cols)
+                if corr.empty or corr.shape[0] < 2:
+                    empty(T("period_corr_empty", lang=lang))
+                else:
+                    corr_labels = [delta_labels.get(c, c) for c in corr.columns]
+                    fig_corr = go.Figure(go.Heatmap(
+                        z=corr.values, x=corr_labels, y=corr_labels,
+                        colorscale=[[0, "#c0392b"], [0.5, "#161b22"], [1, "#1f8b3a"]],
+                        zmin=-1, zmax=1,
+                        text=corr.values, texttemplate="%{text:.2f}",
+                        textfont=dict(size=9, family="JetBrains Mono", color="#f0f6fc"),
+                        hovertemplate="%{y} × %{x}<br>r = %{z:.2f}<extra></extra>",
+                        colorbar=dict(title="r", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc")),
+                    ))
+                    n_vars = len(corr_labels)
+                    fig_corr = themed_rot(fig_corr, angle=-45, height=max(500, n_vars * 26),
+                                           title=T("period_corr_title", lang=lang),
+                                           margin=dict(l=140, r=20, t=64, b=140))
+                    st.plotly_chart(fig_corr, use_container_width=True, key="period_corr_heatmap")
+                    export_csv(corr.reset_index().rename(columns={"index": "metric"}),
+                               "period_correlations.csv", T("period_dl_csv", lang=lang))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
