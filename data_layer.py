@@ -242,11 +242,10 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     frames: list[pd.DataFrame] = []
     source = "syntetyczne"
     live_fetch_range: tuple | None = None
-
-        def _find_parquet(year: int) -> Path | None:
+    def _find_parquet(year: int):
         candidates = [
             Path(f"data/pitch_mix_{year}.parquet"),
-            Path(f"pitch_mix_{year}.parquet"),          # root repo (masz to teraz)
+            Path(f"pitch_mix_{year}.parquet"),
             Path(f"data/pitch_mix{year}.parquet"),
             Path(f"pitch_mix{year}.parquet"),
         ]
