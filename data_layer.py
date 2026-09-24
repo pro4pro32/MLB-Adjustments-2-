@@ -243,9 +243,21 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     source = "syntetyczne"
     live_fetch_range: tuple | None = None
 
+        def _find_parquet(year: int) -> Path | None:
+        candidates = [
+            Path(f"data/pitch_mix_{year}.parquet"),
+            Path(f"pitch_mix_{year}.parquet"),          # root repo (masz to teraz)
+            Path(f"data/pitch_mix{year}.parquet"),
+            Path(f"pitch_mix{year}.parquet"),
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
+        return None
+
     for year in sorted(seasons):
-        p = Path(f"data/pitch_mix_{year}.parquet")
-        if p.exists():
+        p = _find_parquet(year)
+        if p is not None:
             try:
                 df_p = pd.read_parquet(p)
                 df_p["game_date"] = pd.to_datetime(df_p["game_date"])
@@ -261,7 +273,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     if frames and len(frames) == len(seasons):
         return pd.concat(frames, ignore_index=True), source
 
-    missing = [y for y in seasons if not Path(f"data/pitch_mix_{y}.parquet").exists()]
+    missing = [y for y in seasons if _find_parquet(y) is None]
     if missing and use_live:
         try:
             from pybaseball import statcast, playerid_reverse_lookup  # type: ignore
