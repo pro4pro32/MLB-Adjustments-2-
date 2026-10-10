@@ -2,7 +2,7 @@
 compute.py – cała logika obliczeniowa
 
 v5: kategorie generyczne po config.ALL_CATEGORIES / CAT_COLS (16 kategorii:
-FB%, BB%, OS% + zone1%…zone9%, zone11%…zone14%).
+FB%, BR%, OS% + zone1%…zone9%, zone11%…zone14%).
 
 v6 CHANGE — dodane:
   • Rolling baseline (BASELINE_WEEKS) zamiast tylko pojedynczego poprz. tygodnia
@@ -136,7 +136,11 @@ def _compute_batter_deltas(bw: pd.DataFrame, min_pitches: int = 1) -> pd.DataFra
     w["total_baseline_sum"] = (
         w.groupby(grp)["total"].transform(lambda s: s.shift(1).rolling(BASELINE_WEEKS, min_periods=1).sum())
     )
+    w["week_prev_start"] = w.groupby(grp)["week_start"].shift(1)
     w = w.dropna(subset=["total_prev"]).copy()
+    # v7.0: a player back from the IL (or any gap >14 days) must not get a "week-to-week" delta
+    # against a week months earlier — that would flood the leaderboards with returning players.
+    w = w[(w["week_start"] - w["week_prev_start"]) <= pd.Timedelta(days=14)].copy()
 
     min_total = w[["total", "total_prev"]].min(axis=1)
     w["adj_score"] = (w[abs_d_cols].mean(axis=1) * np.sqrt(min_total / 10)).round(2)
@@ -261,6 +265,40 @@ def _compute_velo_weekly(df: pd.DataFrame) -> pd.DataFrame:
 #  4.  MATCHUP-LEVEL  (pitcher × batter) — bez zmian, nadal per pitch_type
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _compute_weekly_ops(df: pd.DataFrame) -> pd.DataFrame:
+    """v7.0: per batter x week OPS from real plate-appearance-ending events + previous observed week."""
+    if "is_pa_end" not in df.columns or "pa_event" not in df.columns:
+        return pd.DataFrame()
+    d = df.loc[df["is_pa_end"].astype(bool) & df["pa_event"].notna(), ["batter_name", "game_date", "pa_event"]].copy()
+    if d.empty:
+        return pd.DataFrame()
+    d["week_start"] = floor_to_monday(d["game_date"])
+    ev = d["pa_event"]
+    for name in ("walk", "hit_by_pitch", "sac_fly", "single", "double", "triple", "home_run"):
+        d["n_" + name] = (ev == name).astype(int)
+    g = (d.groupby(["batter_name", "week_start"])
+           .agg(pa=("pa_event", "size"), bb=("n_walk", "sum"), hbp=("n_hit_by_pitch", "sum"),
+                sf=("n_sac_fly", "sum"), s1=("n_single", "sum"), s2=("n_double", "sum"),
+                s3=("n_triple", "sum"), hr=("n_home_run", "sum"))
+           .reset_index())
+    h = g["s1"] + g["s2"] + g["s3"] + g["hr"]
+    ab = g["pa"] - g["bb"] - g["hbp"] - g["sf"]
+    tb = g["s1"] + 2 * g["s2"] + 3 * g["s3"] + 4 * g["hr"]
+    den = ab + g["bb"] + g["hbp"] + g["sf"]
+    g["obp_wk"] = np.where(den > 0, (h + g["bb"] + g["hbp"]) / den.replace(0, np.nan), np.nan)
+    g["slg_wk"] = np.where(ab > 0, tb / ab.replace(0, np.nan), np.nan)
+    g["ops_wk"] = (g["obp_wk"] + g["slg_wk"]).round(3)
+    g = g.sort_values(["batter_name", "week_start"])
+    g["ops_wk_prev"] = g.groupby("batter_name")["ops_wk"].shift(1)
+    g["pa_wk_prev"] = g.groupby("batter_name")["pa"].shift(1)
+    prev_ws = g.groupby("batter_name")["week_start"].shift(1)
+    far = ~((g["week_start"] - prev_ws) <= pd.Timedelta(days=14))
+    g.loc[far, ["ops_wk_prev", "pa_wk_prev"]] = np.nan
+    g["d_ops_wk"] = (g["ops_wk"] - g["ops_wk_prev"]).round(3)
+    g = g.rename(columns={"pa": "pa_wk"})
+    return g[["batter_name", "week_start", "pa_wk", "obp_wk", "slg_wk", "ops_wk", "ops_wk_prev", "pa_wk_prev", "d_ops_wk"]]
+
+
 def _compute_matchup_weekly(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
     d["week_start"] = floor_to_monday(d["game_date"])
@@ -325,6 +363,10 @@ def precompute_all(df: pd.DataFrame) -> dict[str, Any]:
                  "d_pct_vs_lhp", "platoon_confound_flag"]],
         on=["batter_name", "week_start"], how="left",
     )
+
+    weekly_ops = _compute_weekly_ops(df)
+    if not weekly_ops.empty:
+        bd = bd.merge(weekly_ops, on=["batter_name", "week_start"], how="left")
 
     perf_ms = round((time.perf_counter() - t0) * 1000)
     return {
@@ -441,7 +483,7 @@ def batter_week_matchup_table(mw: pd.DataFrame, batter: str, week_start) -> pd.D
     """
     v6.3: 'Batter ranking, not matchup ranking' — for ONE batter in ONE week, returns
     one row per PITCHER FACED that week (not one row per pitch type like matchup_weekly),
-    with a pitch-mix breakdown (FB%/BB%/OS%) and pitch count. This answers "what were
+    with a pitch-mix breakdown (FB%/BR%/OS%) and pitch count. This answers "what were
     Adley Rutschman's stats against every pitcher he faced in week 1" directly, instead
     of forcing a pitcher-first drilldown.
     """
@@ -808,6 +850,83 @@ def _compute_ops_for_period(d: pd.DataFrame, weeks: list) -> pd.DataFrame:
     out = sub.groupby("batter_name").apply(_agg, include_groups=False).reset_index()
     out["ops"] = (out["obp"] + out["slg"]).round(3)
     return out
+
+
+def weekly_top_pct_counts(bd: pd.DataFrame, metric: str, top_pct: float, mode: str = "abs",
+                          reliable_only: bool = True) -> pd.DataFrame:
+    """v7.0: in how many weeks was each batter inside the league's top `top_pct`% for `metric`?
+    mode: 'abs' = biggest change either way, 'up' = biggest increase, 'down' = biggest decrease."""
+    cols = ["batter_name", "batter_team", "weeks_in_top", "weeks_observed", "share_pct"]
+    if bd.empty or metric not in bd.columns:
+        return pd.DataFrame(columns=cols)
+    d = bd.copy()
+    if reliable_only and "reliable" in d.columns:
+        d = d[d["reliable"]]
+    d = d.dropna(subset=[metric])
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    vals = pd.to_numeric(d[metric], errors="coerce")
+    if metric == "adj_score" or mode == "up":
+        score = vals
+    elif mode == "down":
+        score = -vals
+    else:
+        score = vals.abs()
+    d = d.assign(_score=score)
+    d["_n"] = d.groupby("week_start")["_score"].transform("size")
+    d["_rank"] = d.groupby("week_start")["_score"].rank(method="first", ascending=False)
+    d["_top"] = d["_rank"] <= np.ceil(top_pct / 100.0 * d["_n"])
+    out = d.groupby("batter_name").agg(weeks_in_top=("_top", "sum"), weeks_observed=("_top", "size")).reset_index()
+    out["weeks_in_top"] = out["weeks_in_top"].astype(int)
+    out["share_pct"] = (out["weeks_in_top"] / out["weeks_observed"] * 100).round(1)
+    if "batter_team" in d.columns:
+        team = (d.groupby("batter_name")["batter_team"]
+                 .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else "").reset_index())
+        out = out.merge(team, on="batter_name", how="left")
+    else:
+        out["batter_team"] = ""
+    return (out[cols].sort_values(["weeks_in_top", "share_pct", "batter_name"], ascending=[False, False, True])
+               .reset_index(drop=True))
+
+
+def adjustments_vs_ops(bd: pd.DataFrame, min_pa: int = 12) -> dict:
+    """v7.0: do bigger adjustments coincide with a lower OPS? Batter-weeks with >= min_pa plate
+    appearances in BOTH the week and the previous week. Returns correlations (Adjustment Score
+    and every signed category delta vs same-week OPS and vs week-over-week dOPS) + quartile table."""
+    res = {"n": 0, "corr": pd.DataFrame(), "quartiles": pd.DataFrame(),
+           "r_adj_dops": np.nan, "q1_dops": np.nan, "q4_dops": np.nan, "data": pd.DataFrame()}
+    need = ["ops_wk", "d_ops_wk", "pa_wk", "pa_wk_prev", "adj_score"]
+    if bd.empty or any(c not in bd.columns for c in need):
+        return res
+    d = bd[(bd["pa_wk"] >= min_pa) & (bd["pa_wk_prev"] >= min_pa)].dropna(subset=["ops_wk", "d_ops_wk", "adj_score"]).copy()
+    res["n"], res["data"] = len(d), d
+    if len(d) < 10:
+        return res
+    metrics = ["adj_score"] + [f"d_{_cat_key(c)}" for c in CAT_COLS if f"d_{_cat_key(c)}" in d.columns]
+    rows = []
+    for m in metrics:
+        x = pd.to_numeric(d[m], errors="coerce")
+        ok = x.notna()
+        if ok.sum() < 5 or x[ok].nunique() < 2:
+            continue
+        rows.append({"metric": m, "r_ops": round(float(x[ok].corr(d.loc[ok, "ops_wk"])), 3),
+                     "r_dops": round(float(x[ok].corr(d.loc[ok, "d_ops_wk"])), 3), "n": int(ok.sum())})
+    corr = pd.DataFrame(rows)
+    if not corr.empty:
+        res["corr"] = corr.sort_values("r_dops").reset_index(drop=True)
+        adj_row = corr[corr["metric"] == "adj_score"]
+        if not adj_row.empty:
+            res["r_adj_dops"] = float(adj_row.iloc[0]["r_dops"])
+    d["adj_q"] = pd.qcut(d["adj_score"].rank(method="first"), 4, labels=["Q1", "Q2", "Q3", "Q4"])
+    q = (d.groupby("adj_q", observed=True)
+           .agg(n=("adj_score", "size"), avg_adj=("adj_score", "mean"),
+                avg_ops=("ops_wk", "mean"), avg_dops=("d_ops_wk", "mean")).reset_index())
+    q[["avg_adj", "avg_ops", "avg_dops"]] = q[["avg_adj", "avg_ops", "avg_dops"]].round(3)
+    res["quartiles"] = q
+    lo, hi = q[q["adj_q"] == "Q1"], q[q["adj_q"] == "Q4"]
+    if not lo.empty and not hi.empty:
+        res["q1_dops"], res["q4_dops"] = float(lo.iloc[0]["avg_dops"]), float(hi.iloc[0]["avg_dops"])
+    return res
 
 
 def generate_batter_insights(bd_batter: pd.DataFrame, batter: str, lang: str = "en") -> list[str]:

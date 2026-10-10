@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v6.9)
+# MLB Pitch Mix Dashboard (v7.0)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,22 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v7.0 — real-data upload, Week by Week tab, honest English UI
+- **Upload real data**: sidebar → "Upload your own data". Accepts CSV/Parquet from `export_statcast_data.py`
+  (run it locally with pybaseball; Parquet is smaller) or a raw pitch-by-pitch CSV from Baseball Savant's Statcast Search.
+  Takes priority over synthetic/live data. Your three bat-tracking CSVs (`players_summary`, `detail_zone_pitchgroup`,
+  `swings_by_player_and_pitchgroup`) are season totals **without dates**, so they cannot drive week-to-week analysis.
+- **IL / gaps handled**: a week is only compared with the previous week if the gap is <= 14 days, so a player back
+  from the injured list (e.g. Judge) no longer gets a fake giant "adjustment" against months-old data.
+- **New tab: Week by Week** — (1) pick a week + a Δ metric -> ranked batters, (2) pick a metric + "top X% of league"
+  (1-100) -> in how many weeks each batter landed there, (3) do adjustments move OPS? correlations of Adjustment Score and
+  every Δ with same-week OPS and week-over-week ΔOPS, quartile table, scatter + trend line.
+- **Adjustment Score** now explained in plain language (Rankings tab + Week by Week).
+- **BB% renamed BR%** (breaking ball) so it doesn't clash with BB = walks.
+- **English means English**: all Plotly hover tooltips were hardcoded in Polish; now translated in all 5 languages.
+- **Theme check**: if `.streamlit/config.toml` is missing from your deployment (dot-folders are easy to miss when
+  uploading to GitHub) the app shows a warning and renders tables with its own dark style instead of unreadable ones.
 
 ## v6.9 — stale-season-date bug fix, correlation matrix, per-period teams
 - **Root cause of "why do I only see week 29" fixed**: the synthetic season generator (and

@@ -242,21 +242,10 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     frames: list[pd.DataFrame] = []
     source = "syntetyczne"
     live_fetch_range: tuple | None = None
-    def _find_parquet(year: int):
-        candidates = [
-            Path(f"data/pitch_mix_{year}.parquet"),
-            Path(f"pitch_mix_{year}.parquet"),
-            Path(f"data/pitch_mix{year}.parquet"),
-            Path(f"pitch_mix{year}.parquet"),
-        ]
-        for c in candidates:
-            if c.exists():
-                return c
-        return None
 
     for year in sorted(seasons):
-        p = _find_parquet(year)
-        if p is not None:
+        p = Path(f"data/pitch_mix_{year}.parquet")
+        if p.exists():
             try:
                 df_p = pd.read_parquet(p)
                 df_p["game_date"] = pd.to_datetime(df_p["game_date"])
@@ -267,12 +256,12 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
                 frames.append(df_p)
                 source = "parquet"
             except Exception as e:
-                st.warning(f"Nie można wczytać {p}: {e}")
+                st.warning(f"Could not read {p}: {e}")
 
     if frames and len(frames) == len(seasons):
         return pd.concat(frames, ignore_index=True), source
 
-    missing = [y for y in seasons if _find_parquet(y) is None]
+    missing = [y for y in seasons if not Path(f"data/pitch_mix_{y}.parquet").exists()]
     if missing and use_live:
         try:
             from pybaseball import statcast, playerid_reverse_lookup  # type: ignore
@@ -383,9 +372,9 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
                 else:
                     source = "Statcast (live)"
         except ImportError:
-            st.warning("pybaseball nie jest zainstalowany — pomijam live-fetch, używam danych syntetycznych.")
+            st.warning("pybaseball is not installed — skipping live fetch and using synthetic data.")
         except Exception as e:
-            st.warning(f"Live Statcast fetch nie powiódł się ({e}) — używam danych syntetycznych.")
+            st.warning(f"Live Statcast fetch failed ({e}) — using synthetic data.")
 
     have_seasons = {int(f["season"].iloc[0]) for f in frames} if frames else set()
     for year in sorted(seasons):
@@ -439,3 +428,113 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].fillna(False).astype(bool)
     return df
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  v7.0: load user-uploaded files (export_statcast_data.py output OR raw Statcast Search CSV)
+# ─────────────────────────────────────────────────────────────────────────────
+_REQUIRED_UPLOAD_COLS = ["game_date", "pitcher_name", "batter_name", "pitch_type"]
+_BOOL_COLS = ["two_strike", "swing", "whiff", "in_play", "hit", "is_pa_end"]
+
+
+def _flip_name(n):
+    return f"{n.split(',')[1].strip()} {n.split(',')[0].strip()}" if isinstance(n, str) and "," in n else str(n)
+
+
+def _normalize_raw_statcast(df: pd.DataFrame) -> pd.DataFrame:
+    """Raw Baseball Savant / pybaseball pitch-by-pitch frame -> the model's columns."""
+    df = df.copy()
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    df = df.dropna(subset=["pitch_type"])
+    if "pitcher_name" not in df.columns:
+        df["pitcher_name"] = df["player_name"].apply(_flip_name)
+    if "batter_name" not in df.columns:
+        fallback = "Batter #" + df["batter"].astype("Int64").astype(str)
+        names = fallback
+        try:  # needs pybaseball + internet once (Chadwick register); otherwise ids are shown
+            from pybaseball import playerid_reverse_lookup  # type: ignore
+            ids = df["batter"].dropna().astype(int).unique().tolist()
+            lkp = playerid_reverse_lookup(ids, key_type="mlbam")
+            lkp["batter_name"] = lkp["name_first"].str.title() + " " + lkp["name_last"].str.title()
+            mp = dict(zip(lkp["key_mlbam"].astype(int), lkp["batter_name"]))
+            names = df["batter"].map(mp).fillna(fallback)
+        except Exception:
+            pass
+        df["batter_name"] = names
+    if "batter_team" not in df.columns:
+        if {"home_team", "away_team", "inning_topbot"}.issubset(df.columns):
+            top = df["inning_topbot"].astype(str).str.lower().str.startswith("top")
+            df["batter_team"] = np.where(top, df["away_team"], df["home_team"])
+        else:
+            df["batter_team"] = "Unknown"
+    desc = df["description"].fillna("") if "description" in df.columns else pd.Series("", index=df.index)
+    events = df["events"].fillna("") if "events" in df.columns else pd.Series("", index=df.index)
+    if "swing" not in df.columns:
+        df["swing"] = desc.str.contains("swing|hit_into_play|foul", case=False, regex=True)
+    if "whiff" not in df.columns:
+        df["whiff"] = desc.str.contains("swinging_strike", case=False, regex=True)
+    if "in_play" not in df.columns:
+        df["in_play"] = desc.str.contains("hit_into_play", case=False, regex=True)
+    if "exit_velo" not in df.columns:
+        df["exit_velo"] = pd.to_numeric(df["launch_speed"], errors="coerce") if "launch_speed" in df.columns else np.nan
+    if "hit" not in df.columns:
+        df["hit"] = events.isin(["single", "double", "triple", "home_run"])
+    if "is_pa_end" not in df.columns:
+        df["is_pa_end"] = events != ""
+        pa_map = {"single": "single", "double": "double", "triple": "triple", "home_run": "home_run",
+                  "walk": "walk", "hit_by_pitch": "hit_by_pitch", "sac_fly": "sac_fly",
+                  "sac_fly_double_play": "sac_fly", "strikeout": "strikeout", "strikeout_double_play": "strikeout"}
+        df["pa_event"] = events.map(pa_map)
+        df.loc[df["is_pa_end"] & df["pa_event"].isna(), "pa_event"] = "field_out"
+    if "two_strike" not in df.columns:
+        df["two_strike"] = (pd.to_numeric(df["strikes"], errors="coerce") == 2) if "strikes" in df.columns else False
+    return df
+
+
+def _finalize_frame(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    if "season" not in df.columns:
+        df["season"] = df["game_date"].dt.year
+    defaults = {"batter_team": "Unknown", "p_throws": "R", "balls": np.nan, "strikes": np.nan,
+                "two_strike": False, "release_speed": np.nan, "swing": False, "whiff": False,
+                "in_play": False, "exit_velo": np.nan, "hit": False, "is_pa_end": False,
+                "pa_event": None, "zone": 5}
+    for col, dv in defaults.items():
+        if col not in df.columns:
+            df[col] = dv
+    for c in _BOOL_COLS:
+        if df[c].dtype == object:
+            df[c] = df[c].astype(str).str.strip().str.lower().isin(["true", "1", "1.0"])
+        else:
+            df[c] = df[c].fillna(False).astype(bool)
+    df["zone"] = pd.to_numeric(df["zone"], errors="coerce").fillna(5).astype(int)
+    df = df.dropna(subset=["pitcher_name", "batter_name", "pitch_type"])
+    return _optimize_dtypes(df)
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def load_uploaded_files(files: tuple) -> tuple[pd.DataFrame, str]:
+    """files = ((filename, bytes), ...). Accepts CSV or Parquet. Either the output of
+    export_statcast_data.py, or a raw pitch-by-pitch Statcast Search CSV."""
+    import io
+    frames = []
+    for name, data in files:
+        bio = io.BytesIO(data)
+        df = pd.read_parquet(bio) if name.lower().endswith(".parquet") else pd.read_csv(bio, low_memory=False)
+        if all(c in df.columns for c in _REQUIRED_UPLOAD_COLS):
+            pass
+        elif {"game_date", "pitch_type", "batter"}.issubset(df.columns) and \
+                ("player_name" in df.columns or "pitcher_name" in df.columns):
+            df = _normalize_raw_statcast(df)
+        else:
+            raise ValueError(
+                f"'{name}' has no pitch-by-pitch columns. Found: {list(df.columns)[:12]}. "
+                f"Need {_REQUIRED_UPLOAD_COLS} (output of export_statcast_data.py) or a raw "
+                f"Statcast Search CSV (game_date, pitch_type, batter, player_name, ...). "
+                f"Aggregated bat-tracking summaries cannot be used — they have no dates."
+            )
+        frames.append(df)
+    out = _finalize_frame(pd.concat(frames, ignore_index=True))
+    return out, "upload"

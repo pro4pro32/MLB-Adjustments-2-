@@ -81,7 +81,7 @@ ZONE_WEIGHTS: dict[str, list[float]] = {
 # ── Kategorie pitch-type agregowane ──────────────────────────────────────────
 PITCH_CATEGORIES: dict[str, dict] = {
     "fb_pct":  {"label": "Fastball %",      "short": "FB%",  "kind": "pitch", "types": ["FF", "SI", "FC"],       "color": "#ff6b35"},
-    "bb_pct":  {"label": "Breaking Ball %", "short": "BB%",  "kind": "pitch", "types": ["SL", "CU", "KC", "ST"], "color": "#58a6ff"},
+    "bb_pct":  {"label": "Breaking Ball %", "short": "BR%",  "kind": "pitch", "types": ["SL", "CU", "KC", "ST"], "color": "#58a6ff"},
     "os_pct":  {"label": "Offspeed %",      "short": "OS%",  "kind": "pitch", "types": ["CH", "FS"],             "color": "#bc8cff"},
 }
 
@@ -515,5 +515,14 @@ div[data-testid="stMetricLabel"] {
     margin-top: 16px; font-size: 0.78rem; color: var(--muted);
     font-family: 'JetBrains Mono', monospace;
 }
+
+/* v7.0: fallback HTML table (only used when the dark theme file is missing) */
+.html-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.html-table-wrap table { border-collapse: collapse; width: 100%; font-size: 0.78rem; color: var(--text); background: var(--bg); }
+.html-table-wrap th { position: sticky; top: 0; background: var(--bg2); color: var(--text); text-align: right;
+                      padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.html-table-wrap td { padding: 5px 10px; border-bottom: 1px solid var(--bg3); text-align: right; white-space: nowrap; color: var(--text); }
+.html-table-wrap td:nth-child(2), .html-table-wrap th:nth-child(2) { text-align: left; }
+.html-table-wrap tr:hover td { background: var(--bg3); }
 </style>
 """

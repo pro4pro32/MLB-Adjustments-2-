@@ -220,7 +220,7 @@ def export_csv(df: pd.DataFrame, filename: str, label: str = "⬇ CSV") -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  CHART: Pitch-type trend (FB%/BB%/OS%) — główny wykres profilu pałkarza
+#  CHART: Pitch-type trend (FB%/BR%/OS%) — główny wykres profilu pałkarza
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _thin_week_ticks(fig: go.Figure, x_labels: list, max_ticks: int = 15) -> go.Figure:
@@ -235,7 +235,7 @@ def _thin_week_ticks(fig: go.Figure, x_labels: list, max_ticks: int = 15) -> go.
 
 
 def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
-    """Line chart: FB%/BB%/OS% per week dla jednego battera."""
+    """Line chart: FB%/BR%/OS% per week dla jednego battera."""
     sub = bw[bw["batter_name"] == batter].sort_values("week_start")
 
     fig = go.Figure()
@@ -253,9 +253,9 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -
             marker=dict(size=7, color=color, line=dict(color="#0d1117", width=1.5)),
             customdata=sub[["week_label", "total"]].values,
             hovertemplate=(
-                f"<b>{full}</b><br>Tydzień: %{{customdata[0]}}<br>"
-                "<b>%{y:.1f}%</b> pitchy do battera<br>"
-                "Łącznie pitchy: %{customdata[1]}<extra></extra>"
+                f"<b>{full}</b><br>{T('axis_week', lang=lang)}: %{{customdata[0]}}<br>"
+                "<b>%{y:.1f}%</b> " + T("hover_pitches_to_batter", lang=lang) + "<br>"
+                + T("hover_total_pitches", lang=lang) + ": %{customdata[1]}<extra></extra>"
             ),
         ))
 
@@ -271,7 +271,7 @@ def chart_batter_trend(bw: pd.DataFrame, batter: str, lang: str | None = None) -
 
 
 def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
-    """Grouped bar chart: zmiana FB%/BB%/OS% tydzień do tygodnia."""
+    """Grouped bar chart: zmiana FB%/BR%/OS% tydzień do tygodnia."""
     sub = bd[bd["batter_name"] == batter].sort_values("week_start")
     if sub.empty:
         return go.Figure()
@@ -285,7 +285,7 @@ def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = No
         fig.add_trace(go.Bar(
             name=lbl, x=sub["week_label_short"], y=sub[d_col],
             marker_color=color, opacity=0.85,
-            hovertemplate=f"<b>{lbl} Δ</b><br>Tydzień: %{{x}}<br>Zmiana: <b>%{{y:+.1f}} pp</b><extra></extra>",
+            hovertemplate=f"<b>{lbl} Δ</b><br>{T('axis_week', lang=lang)}: %{{x}}<br>{T('hover_change', lang=lang)}: <b>%{{y:+.1f}} pp</b><extra></extra>",
         ))
 
     fig = themed_rot(
@@ -298,7 +298,7 @@ def chart_batter_delta_bars(bd: pd.DataFrame, batter: str, lang: str | None = No
 
 
 def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None) -> go.Figure:
-    """Heatmapa tygodnie × FB%/BB%/OS%."""
+    """Heatmapa tygodnie × FB%/BR%/OS%."""
     sub = bw[bw["batter_name"] == batter].sort_values("week_start")
     if sub.empty:
         return go.Figure()
@@ -318,7 +318,7 @@ def chart_batter_heatmap(bw: pd.DataFrame, batter: str, lang: str | None = None)
         z=z_data, x=x_labels, y=y_labels,
         colorscale=[[0.0, "#161b22"], [0.25, "#7a3a1a"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1.0, "#ffb703"]],
         zmin=0, zmax=80,
-        hovertemplate="Kategoria: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
+        hovertemplate=T("hover_category", lang=lang) + ": %{y}<br>" + T("axis_week", lang=lang) + ": %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
         colorbar=dict(title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc"),
                       thickness=12, len=0.8),
@@ -489,8 +489,9 @@ def chart_biggest_movers(lb: pd.DataFrame, lang: str | None = None) -> go.Figure
         textposition="outside", cliponaxis=False,
         textfont=dict(color="#f0f6fc", size=11),
         hovertemplate=(
-            "<b>%{y}</b><br>Kategoria: %{customdata[0]}<br>"
-            "Zmiana: <b>%{x:+.1f} pp</b><br>Pitchy: %{customdata[1]}<extra></extra>"
+            "<b>%{y}</b><br>" + T("hover_category", lang=lang) + ": %{customdata[0]}<br>"
+            + T("hover_change", lang=lang) + ": <b>%{x:+.1f} pp</b><br>"
+            + T("col_pitches", lang=lang) + ": %{customdata[1]}<extra></extra>"
         ),
         customdata=bar[["top_mover_label", "total"]].values,
     ))
@@ -579,7 +580,7 @@ def chart_comparison(bw: pd.DataFrame, batters: list[str], cat_col: str, lang: s
             x=sub["week_label_short"], y=sub[cat_col], mode="lines+markers", name=b,
             line=dict(color=colors_comp[i % len(colors_comp)], width=2.5),
             marker=dict(size=7),
-            hovertemplate=f"<b>{b}</b><br>Tydzień: %{{x}}<br>{label}: %{{y:.1f}}%<extra></extra>",
+            hovertemplate=f"<b>{b}</b><br>{T('axis_week', lang=lang)}: %{{x}}<br>{label}: %{{y:.1f}}%<extra></extra>",
         ))
 
     themed_rot(fig, angle=-30, height=340, title=T("chart_compare_title", lang=lang, full=full),
@@ -604,8 +605,8 @@ def chart_matchup_line(mw: pd.DataFrame, pitcher: str, batter: str, lang: str | 
             name=f"{pt} – {PITCH_TYPES.get(pt, pt)}",
             line=dict(color=PITCH_COLORS.get(pt, "#aaa"), width=2.5), marker=dict(size=7),
             customdata=ptd[["week_label", "pitch_pct", "total"]].values,
-            hovertemplate=(f"<b>{pt}</b><br>Tydzień: %{{customdata[0]}}<br>"
-                          "%: %{y:.1f}%<br>Total pitchy: %{customdata[2]}<extra></extra>"),
+            hovertemplate=(f"<b>{pt}</b><br>{T('axis_week', lang=lang)}: %{{customdata[0]}}<br>"
+                          "%: %{y:.1f}%<br>" + T("hover_total_pitches", lang=lang) + ": %{customdata[2]}<extra></extra>"),
         ))
 
     themed_rot(fig, angle=-30, height=360, title=T("chart_matchup_line_title", lang=lang, pitcher=pitcher, batter=batter),
@@ -626,7 +627,7 @@ def chart_matchup_heatmap(mw: pd.DataFrame, pitcher: str, batter: str, lang: str
         z=pivot.values, x=list(pivot.columns), y=pivot.index.tolist(),
         colorscale=[[0, "#161b22"], [0.25, "#1a3a5c"], [0.55, "#ff6b35"], [0.8, "#ffd166"], [1, "#ffb703"]],
         zmin=0, zmax=80,
-        hovertemplate="Pitch: %{y}<br>Tydzień: %{x}<br>%: %{z:.1f}%<extra></extra>",
+        hovertemplate="Pitch: %{y}<br>" + T("axis_week", lang=lang) + ": %{x}<br>%: %{z:.1f}%<extra></extra>",
         showscale=True,
         colorbar=dict(thickness=10, title="%", tickfont=dict(color="#c9d1d9"), title_font=dict(color="#f0f6fc")),
     )
@@ -663,8 +664,9 @@ def chart_biggest_changes(md: pd.DataFrame, top_n: int = 20, lang: str | None = 
         ], axis=-1),
         hovertemplate=(
             "<b>%{y}</b><br>Pitch: %{customdata[0]}<br>"
-            "Teraz: %{customdata[1]:.1f}% · Poprzednio: %{customdata[2]:.1f}%<br>"
-            "Δ: <b>%{x:+.1f} pp</b><br>Pitchy: %{customdata[3]} · Tydzień: %{customdata[4]}<extra></extra>"
+            + T("hover_now", lang=lang) + ": %{customdata[1]:.1f}% · " + T("hover_prev", lang=lang) + ": %{customdata[2]:.1f}%<br>"
+            + "Δ: <b>%{x:+.1f} pp</b><br>" + T("col_pitches", lang=lang) + ": %{customdata[3]} · "
+            + T("axis_week", lang=lang) + ": %{customdata[4]}<extra></extra>"
         ),
     ))
     fig = themed(fig, height=max(420, top_n * 27),
@@ -724,7 +726,7 @@ def chart_platoon_context(bd: pd.DataFrame, batter: str, lang: str | None = None
         x=sub["week_label_short"], y=sub["pct_vs_lhp"], marker_color=colors,
         text=sub["pct_vs_lhp"].round(0).astype(int).astype(str) + "%",
         textposition="outside",
-        hovertemplate="Tydzień: %{x}<br>%% rzutów vs LHP: %{y:.1f}%%<extra></extra>",
+        hovertemplate=T("axis_week", lang=lang) + ": %{x}<br>" + T("axis_pct_vs_lhp", lang=lang) + ": %{y:.1f}%<extra></extra>",
     ))
     fig = themed_rot(fig, angle=-30, height=260,
                  title=T("chart_platoon_title", lang=lang, batter=batter),
@@ -748,8 +750,8 @@ def chart_velo_trend(velo: pd.DataFrame, batter: str, lang: str | None = None) -
             name=f"{pt} – {PITCH_TYPES.get(pt, pt)}",
             line=dict(color=PITCH_COLORS.get(pt, "#aaa"), width=2.3), marker=dict(size=6),
             customdata=ptd[["d_velo", "n"]].values,
-            hovertemplate=(f"<b>{pt}</b><br>Tydzień: %{{x}}<br>Śr. prędkość: %{{y:.1f}} mph<br>"
-                          "Δ vs poprz. tydz.: %{customdata[0]:+.1f} mph<br>N: %{customdata[1]}<extra></extra>"),
+            hovertemplate=(f"<b>{pt}</b><br>{T('axis_week', lang=lang)}: %{{x}}<br>{T('hover_avg_velo', lang=lang)}: %{{y:.1f}} mph<br>"
+                          f"{T('hover_delta_vs_prev', lang=lang)}: %{{customdata[0]:+.1f}} mph<br>N: %{{customdata[1]}}<extra></extra>"),
         ))
     fig = themed_rot(fig, angle=-30, height=340,
                   title=T("chart_velo_title", lang=lang, batter=batter),
@@ -769,9 +771,9 @@ def chart_team_rollup(team_df: pd.DataFrame, lang: str | None = None) -> go.Figu
         textfont=dict(color="#f0f6fc", size=11),
         customdata=d[["top_batter", "top_mover_label", "top_mover_delta", "n_batter_weeks"]].values,
         hovertemplate=(
-            "<b>%{y}</b><br>Śr. Adj. Score: %{x:.1f}<br>"
-            "Top mover: %{customdata[0]} (%{customdata[1]} %{customdata[2]:+.1f}pp)<br>"
-            "N batter-tygodni: %{customdata[3]}<extra></extra>"
+            "<b>%{y}</b><br>" + T("axis_avg_adj_score", lang=lang) + ": %{x:.1f}<br>"
+            + T("hover_top_mover", lang=lang) + ": %{customdata[0]} (%{customdata[1]} %{customdata[2]:+.1f}pp)<br>"
+            + T("hover_batter_weeks", lang=lang) + ": %{customdata[3]}<extra></extra>"
         ),
     ))
     fig = themed(fig, height=max(300, len(d) * 45),
@@ -793,7 +795,7 @@ def chart_sustained_movers(df: pd.DataFrame, lang: str | None = None) -> go.Figu
         x=d["cumulative_delta"], y=d["label"], orientation="h", marker_color=colors,
         text=d.apply(lambda r: f"{r['streak_weeks']} tyg. · {r['cumulative_delta']:+.1f}pp", axis=1),
         textposition="outside", cliponaxis=False, textfont=dict(color="#f0f6fc", size=10),
-        hovertemplate="<b>%{y}</b><br>Streak: %{customdata} tygodni<br>Skumulowana zmiana: %{x:+.1f} pp<extra></extra>",
+        hovertemplate="<b>%{y}</b><br>" + T("hover_streak", lang=lang) + ": %{customdata} " + T("hover_weeks_unit", lang=lang) + "<br>" + T("axis_cumulative_delta", lang=lang) + ": %{x:+.1f} pp<extra></extra>",
         customdata=d["streak_weeks"],
     ))
     fig = themed(fig, height=max(360, len(d) * 32),
@@ -810,3 +812,63 @@ def render_digest_block(digest_text: str, lang: str | None = None) -> None:
         file_name="weekly_digest.md", mime="text/markdown",
     )
 
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  v7.0: theme-proof tables, theme diagnostic, Adjustment Score vs dOPS scatter
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _theme_is_dark() -> bool:
+    """True when Streamlit started with the dark theme from .streamlit/config.toml."""
+    try:
+        return str(st.get_option("theme.base")).lower() == "dark"
+    except Exception:
+        return True
+
+
+def show_theme_warning(lang: str | None = None) -> None:
+    if not _theme_is_dark():
+        st.warning(T("theme_warning", lang=lang))
+
+
+def show_table(data, height: int | None = None, **kwargs) -> None:
+    """Dark theme active -> normal interactive st.dataframe. Theme file missing (light theme:
+    dataframe canvas turns light while our CSS is dark = unreadable) -> HTML table in our own dark CSS."""
+    if _theme_is_dark():
+        st.dataframe(data, use_container_width=True, height=height)
+        return
+    try:
+        html = data.to_html() if hasattr(data, "to_html") else pd.DataFrame(data).to_html()
+    except Exception:
+        st.dataframe(data, use_container_width=True, height=height)
+        return
+    h = int(height) if height else 520
+    st.markdown(f'<div class="html-table-wrap" style="max-height:{h}px">{html.replace(chr(10), "")}</div>',
+                unsafe_allow_html=True)
+
+
+def chart_adj_vs_ops(d: pd.DataFrame, lang: str | None = None) -> go.Figure:
+    """Adjustment Score (x) vs week-over-week dOPS (y), one dot per batter-week + least-squares line."""
+    if d.empty:
+        return go.Figure()
+    x = pd.to_numeric(d["adj_score"], errors="coerce")
+    y = pd.to_numeric(d["d_ops_wk"], errors="coerce")
+    ok = x.notna() & y.notna()
+    x, y, dd = x[ok], y[ok], d[ok]
+    fig = go.Figure(go.Scattergl(
+        x=x, y=y, mode="markers", marker=dict(size=5, color="#58a6ff", opacity=0.35),
+        customdata=np.stack([dd["batter_name"].astype(str), dd["week_label_short"].astype(str),
+                             dd["pa_wk"].astype(int).astype(str)], axis=-1),
+        hovertemplate=("<b>%{customdata[0]}</b> · %{customdata[1]}<br>Adj.Score: %{x:.1f}"
+                       "<br>Δ OPS: %{y:+.3f}<br>PA: %{customdata[2]}<extra></extra>"),
+        name="batter-week", showlegend=False,
+    ))
+    if len(x) >= 3 and x.nunique() > 1:
+        slope, intercept = np.polyfit(x, y, 1)
+        xs = np.array([x.min(), x.max()])
+        fig.add_trace(go.Scatter(x=xs, y=slope * xs + intercept, mode="lines",
+                                 line=dict(color="#ff6b35", width=3), name=T("wbw_scatter_fit", lang=lang)))
+    fig.add_hline(y=0, line=dict(color="#7d8590", width=1, dash="dot"))
+    return themed(fig, height=420, title=T("wbw_scatter_title", lang=lang),
+                  xaxis_title="Adjustment Score", yaxis_title="Δ OPS (week-over-week)")

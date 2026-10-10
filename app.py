@@ -1,7 +1,7 @@
 """
 app.py – Pitch Mix Dashboard v6.2
 Analiza pitch mix rzucanego DO pałkarzy w ujęciu tygodniowym.
-16 śledzonych kategorii (FB%/BB%/OS% + 13 stref Statcast), outcome-aware,
+16 śledzonych kategorii (FB%/BR%/OS% + 13 stref Statcast), outcome-aware,
 opt-in bounded live-data fetch (v6.1 crash fix), i pełny language switcher
 (en/pl/fr/es/ja — v6.2).
 
@@ -23,7 +23,7 @@ from config import (
     APP_CSS, AVAILABLE_SEASONS, CAT_COLS, PITCH_CAT_COLS, ZONE_CAT_COLS,
     CAT_COLORS, ALL_CATEGORIES, PITCH_TYPES, MIN_RELIABLE_PITCHES, BASELINE_WEEKS,
 )
-from data_layer import load_data
+from data_layer import load_data, load_uploaded_files
 from compute import (
     precompute_all,
     filter_batter_weekly, filter_batter_delta,
@@ -32,6 +32,7 @@ from compute import (
     biggest_movers_leaderboard, latest_week_headline, batter_week_rank, batter_week_matchup_table,
     sustained_movers_leaderboard, team_rollup_table, generate_weekly_digest,
     compute_period_comparison, compute_period_correlations,
+    weekly_top_pct_counts, adjustments_vs_ops,
 )
 from ui_components import (
     SidebarFilters,
@@ -43,6 +44,7 @@ from ui_components import (
     chart_biggest_changes, chart_biggest_movers, render_share_card,
     chart_outcome_trend, chart_platoon_context, chart_velo_trend,
     chart_team_rollup, chart_sustained_movers, render_digest_block,
+    show_theme_warning, show_table, chart_adj_vs_ops,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,6 +80,7 @@ st.markdown(f"""
     <span class="badge">{T("header_badge", lang=lang)}</span>
 </div>
 """, unsafe_allow_html=True)
+show_theme_warning(lang=lang)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR + LOAD DATA
@@ -105,8 +108,22 @@ with st.sidebar:
         )
         st.caption(T("sidebar_live_caption", lang=lang))
 
+with st.sidebar:
+    st.markdown(T("sidebar_upload_header", lang=lang))
+    _uploads = st.file_uploader(T("sidebar_upload_label", lang=lang), type=["csv", "parquet"],
+                                accept_multiple_files=True, key="data_upload",
+                                help=T("sidebar_upload_help", lang=lang))
+
 with st.spinner(f"⚾ {T('sidebar_app_name', lang=lang)}…"):
-    raw_df, data_source = load_data(tuple(sorted(_seasons_sel)), use_live=_use_live, live_days_back=_live_days)
+    if _uploads:
+        try:
+            raw_df, data_source = load_uploaded_files(tuple((f.name, f.getvalue()) for f in _uploads))
+        except Exception as _e:
+            st.error(T("upload_error", lang=lang, err=str(_e)))
+            st.stop()
+        _seasons_sel = sorted(int(x) for x in raw_df["season"].unique())
+    else:
+        raw_df, data_source = load_data(tuple(sorted(_seasons_sel)), use_live=_use_live, live_days_back=_live_days)
 
 raw_df["game_date"] = pd.to_datetime(raw_df["game_date"])
 
@@ -128,6 +145,8 @@ pc_ms    = pc["perf_ms"]
 season_str = ", ".join(str(y) for y in sorted(filters.seasons))
 if data_source in ("parquet", "syntetyczne"):
     _source_label = {"parquet": T("source_parquet", lang=lang), "syntetyczne": T("source_synthetic", lang=lang)}[data_source]
+elif data_source == "upload":
+    _source_label = T("source_upload", lang=lang) + f" {raw_df['game_date'].min().date()} → {raw_df['game_date'].max().date()}"
 elif "Statcast" in data_source:
     # data_source looks like "Statcast (live, 2026-08-15 to 2026-08-29)" — show the
     # actual fetched window as-is so it's clear exactly how current the data is,
@@ -135,7 +154,7 @@ elif "Statcast" in data_source:
     _source_label = data_source
 else:
     _source_label = data_source
-src_icon = "📂" if data_source == "parquet" else ("🌐" if "Statcast" in data_source else "🎲")
+src_icon = "📂" if data_source == "parquet" else ("📤" if data_source == "upload" else ("🌐" if "Statcast" in data_source else "🎲"))
 st.markdown(
     f'<span class="perf-pill">' +
     T("perf_pill", lang=lang, icon=src_icon, source=_source_label, season_str=season_str,
@@ -194,10 +213,11 @@ render_kpis([
 #  TABY
 # ─────────────────────────────────────────────────────────────────────────────
 (tab_profile, tab_report, tab_velo, tab_compare, tab_changes,
- tab_matchup, tab_ranking, tab_team, tab_period) = st.tabs([
+ tab_matchup, tab_ranking, tab_team, tab_period, tab_wbw) = st.tabs([
     T("tab_profile", lang=lang), T("tab_report", lang=lang), T("tab_velo", lang=lang),
     T("tab_compare", lang=lang), T("tab_changes", lang=lang), T("tab_matchup", lang=lang),
     T("tab_ranking", lang=lang), T("tab_team", lang=lang), T("tab_period", lang=lang),
+    T("tab_wbw", lang=lang),
 ])
 
 
@@ -258,7 +278,7 @@ with tab_profile:
             if not bd_b.empty:
                 disp_cols = {
                     "week_label_short": T("col_week", lang=lang),
-                    "fb_pct": "FB%", "bb_pct": "BB%", "os_pct": "OS%",
+                    "fb_pct": "FB%", "bb_pct": "BR%", "os_pct": "OS%",
                     "d_fb": "ΔFB", "d_bb": "ΔBB", "d_os": "ΔOS",
                     "adj_score": "Adj.Score", "total": T("col_pitches", lang=lang),
                 }
@@ -269,7 +289,7 @@ with tab_profile:
                     if "%" in c and "Δ" not in c: fmt[c] = "{:.1f}%"
                     elif "Δ" in c: fmt[c] = "{:+.1f}"
                     elif c == "Adj.Score": fmt[c] = "{:.1f}"
-                st.dataframe(
+                show_table(
                     tbl.style.background_gradient(subset=["Adj.Score"] if "Adj.Score" in tbl.columns else [], cmap="YlOrRd")
                        .format(fmt, na_rep="—"),
                     use_container_width=True, height=320,
@@ -441,7 +461,7 @@ with tab_compare:
             bw_cmp = bw[bw["batter_name"].isin(cmp_batters)]
             avg_tbl = bw_cmp.groupby("batter_name")[PITCH_CAT_COLS].mean().round(1).reset_index()
             avg_tbl.columns = [T("col_batter", lang=lang)] + [ALL_CATEGORIES[c]["short"] for c in PITCH_CAT_COLS]
-            st.dataframe(
+            show_table(
                 avg_tbl.style.background_gradient(cmap="RdYlGn", subset=avg_tbl.columns[1:].tolist())
                        .format({c: "{:.1f}%" for c in avg_tbl.columns[1:]}),
                 use_container_width=True,
@@ -475,7 +495,7 @@ with tab_changes:
         elif direction == dir_opts[2]: tbl_md = tbl_md[tbl_md["Δ pp"] < 0]
         tbl_md = tbl_md.head(top_n)
 
-        st.dataframe(
+        show_table(
             tbl_md[["Pitcher","Batter","Week","Prev Week","Pitch Name","Now %","Prev %","Δ pp","Pitches"]]
             .style.background_gradient(subset=["Δ pp"], cmap="RdYlGn", vmin=-30, vmax=30)
             .format({"Now %": "{:.1f}%", "Prev %": "{:.1f}%", "Δ pp": "{:+.1f} pp"}),
@@ -529,11 +549,11 @@ with tab_matchup:
                 "pitcher_name": T("matchup_col_pitcher", lang=lang),
                 "total": T("matchup_col_pitches", lang=lang),
                 "top_pitch_type": T("matchup_col_toppt", lang=lang),
-                "fb_pct": "FB%", "bb_pct": "BB%", "os_pct": "OS%",
+                "fb_pct": "FB%", "bb_pct": "BR%", "os_pct": "OS%",
             })
-            st.dataframe(
-                disp.style.background_gradient(subset=["FB%", "BB%", "OS%"], cmap="RdYlGn")
-                   .format({"FB%": "{:.1f}%", "BB%": "{:.1f}%", "OS%": "{:.1f}%"}),
+            show_table(
+                disp.style.background_gradient(subset=["FB%", "BR%", "OS%"], cmap="RdYlGn")
+                   .format({"FB%": "{:.1f}%", "BR%": "{:.1f}%", "OS%": "{:.1f}%"}),
                 use_container_width=True,
             )
             export_csv(bwk_tbl, f"batter_week_{sel_b.replace(' ', '_')}.csv", T("changes_dl_csv", lang=lang))
@@ -541,7 +561,7 @@ with tab_matchup:
             section(T("matchup_section_chart", lang=lang))
             wk_label_str = week_labels.get(sel_week, str(sel_week))
             fig_stack = go.Figure()
-            for cat_col, label in [("fb_pct", "FB%"), ("bb_pct", "BB%"), ("os_pct", "OS%")]:
+            for cat_col, label in [("fb_pct", "FB%"), ("bb_pct", "BR%"), ("os_pct", "OS%")]:
                 fig_stack.add_trace(go.Bar(
                     x=bwk_tbl["pitcher_name"], y=bwk_tbl[cat_col], name=label,
                     marker_color=CAT_COLORS[cat_col],
@@ -585,7 +605,7 @@ with tab_matchup:
                             st.info(T("matchup_info_fewweeks", lang=lang))
                         else:
                             show_md = md_mb[["Week", "Pitch Name", "Now %", "Prev %", "Δ pp", "Pitches"]].head(20)
-                            st.dataframe(
+                            show_table(
                                 show_md.style.background_gradient(subset=["Δ pp"], cmap="RdYlGn", vmin=-30, vmax=30)
                                        .format({"Now %": "{:.1f}%", "Prev %": "{:.1f}%", "Δ pp": "{:+.1f} pp"}),
                                 use_container_width=True, height=280,
@@ -599,6 +619,8 @@ with tab_matchup:
 with tab_ranking:
     section(T("rank_header", lang=lang))
     st.caption(T("rank_caption", lang=lang))
+    with st.expander(T("adj_score_explain_header", lang=lang)):
+        st.markdown(T("adj_score_explain_body", lang=lang))
 
     if bd.empty:
         empty()
@@ -642,7 +664,7 @@ with tab_ranking:
                              T("rank_col_weeks", lang=lang), T("rank_col_fb", lang=lang), T("rank_col_bb", lang=lang),
                              T("rank_col_os", lang=lang)]
         section(T("rank_section_table", lang=lang))
-        st.dataframe(
+        show_table(
             rank_tbl.style.background_gradient(subset=[T("rank_col_maxadj", lang=lang), T("rank_col_avgadj", lang=lang)], cmap="YlOrRd")
                     .format({c: "{:.1f}" for c in rank_tbl.columns if c not in (T("col_batter", lang=lang), T("rank_col_weeks", lang=lang))}),
             use_container_width=True,
@@ -705,7 +727,7 @@ with tab_team:
     else:
         team_tbl = team_rollup_table(bd)
         st.plotly_chart(chart_team_rollup(team_tbl, lang=lang), use_container_width=True, key="team_rollup_chart")
-        st.dataframe(
+        show_table(
             team_tbl.rename(columns={
                 "team": T("team_col_team", lang=lang), "avg_adj": T("team_col_avgadj", lang=lang),
                 "max_adj": T("team_col_maxadj", lang=lang), "n_batter_weeks": T("team_col_n", lang=lang),
@@ -781,7 +803,7 @@ with tab_period:
             if comp.empty:
                 empty(T("period_empty", lang=lang))
             else:
-                # v6.9: FB%/BB%/OS% first (most-asked-about, no scrolling needed), then
+                # v6.9: FB%/BR%/OS% first (most-asked-about, no scrolling needed), then
                 # OPS/velocity, then the 13 zones.
                 pitch_mix_specs = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in PITCH_CAT_COLS]
                 zone_specs = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in ZONE_CAT_COLS]
@@ -825,7 +847,7 @@ with tab_period:
                 fmt.update({c: "{:+.3f}" for c in ops_delta_disp_cols})
                 fmt.update({c: "{:.3f}" for c in ops_abs_disp_cols})
 
-                st.dataframe(
+                show_table(
                     disp.style
                        .background_gradient(subset=ops_delta_disp_cols, cmap="RdYlGn", vmin=-0.3, vmax=0.3)
                        .background_gradient(subset=pct_delta_disp_cols, cmap="RdYlGn", vmin=-20, vmax=20)
@@ -858,6 +880,154 @@ with tab_period:
                     st.plotly_chart(fig_corr, use_container_width=True, key="period_corr_heatmap")
                     export_csv(corr.reset_index().rename(columns={"index": "metric"}),
                                "period_correlations.csv", T("period_dl_csv", lang=lang))
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TAB 10 – WEEK BY WEEK  (v7.0)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_wbw:
+    section(T("wbw_header", lang=lang))
+    st.caption(T("wbw_caption", lang=lang))
+
+    if bd_league.empty:
+        empty()
+    else:
+        _pm = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in PITCH_CAT_COLS]
+        _zn = [(f"d_{c.replace('_pct', '')}", f"Δ {ALL_CATEGORIES[c]['short']}") for c in ZONE_CAT_COLS]
+        wbw_specs = _pm + _zn + [("adj_score", "Adjustment Score")]
+        if "d_ops_wk" in bd_league.columns:
+            wbw_specs.append(("d_ops_wk", "Δ OPS (wk)"))
+        wbw_specs = [(c, l) for c, l in wbw_specs if c in bd_league.columns]
+        wbw_labels = dict(wbw_specs)
+        wbw_cols = [c for c, _ in wbw_specs]
+
+        def _dir_options():
+            return [T("wbw_dir_abs", lang=lang), T("wbw_dir_up", lang=lang), T("wbw_dir_down", lang=lang)]
+
+        def _dir_mode(choice):
+            return {T("wbw_dir_abs", lang=lang): "abs", T("wbw_dir_up", lang=lang): "up",
+                    T("wbw_dir_down", lang=lang): "down"}.get(choice, "abs")
+
+        # ── 1) one week's ranking ─────────────────────────────────────────────
+        section(T("wbw_section1", lang=lang))
+        _weeks = bd_league[["week_start", "week_label_short"]].drop_duplicates().sort_values("week_start")
+        _wk_starts = _weeks["week_start"].tolist()
+        _wk_label = dict(zip(_weeks["week_start"], _weeks["week_label_short"]))
+        w1, w2, w3 = st.columns([1, 2, 2])
+        with w1:
+            sel_wk = st.selectbox(T("wbw_pick_week", lang=lang), _wk_starts, index=len(_wk_starts) - 1,
+                                  format_func=lambda w: _wk_label.get(w, str(w)), key="wbw_week")
+        with w2:
+            sel_m1 = st.selectbox(T("wbw_pick_metric", lang=lang), wbw_cols, index=0,
+                                  format_func=lambda c: wbw_labels[c], key="wbw_metric1")
+        with w3:
+            sel_dir1 = st.radio(T("wbw_pick_direction", lang=lang), _dir_options(), key="wbw_dir1")
+
+        d1 = bd_league[bd_league["week_start"] == sel_wk].copy()
+        if "reliable" in d1.columns:
+            d1 = d1[d1["reliable"]]
+        d1 = d1.dropna(subset=[sel_m1])
+        if d1.empty:
+            empty(T("wbw_empty_week", lang=lang))
+        else:
+            _v = pd.to_numeric(d1[sel_m1], errors="coerce")
+            _mode1 = "up" if sel_m1 == "adj_score" else _dir_mode(sel_dir1)
+            _key = _v if _mode1 == "up" else (-_v if _mode1 == "down" else _v.abs())
+            d1 = d1.assign(_k=_key).sort_values("_k", ascending=False).reset_index(drop=True)
+            show_cols = ["batter_name"] + (["batter_team"] if "batter_team" in d1.columns else []) + [sel_m1]
+            if sel_m1 != "adj_score":
+                show_cols.append("adj_score")
+            show_cols.append("total")
+            if "ops_wk" in d1.columns:
+                show_cols.append("ops_wk")
+            vcol = wbw_labels[sel_m1]
+            t1 = d1[show_cols].rename(columns={
+                "batter_name": T("col_batter", lang=lang), "batter_team": T("period_col_team", lang=lang),
+                sel_m1: vcol, "total": T("col_pitches", lang=lang), "ops_wk": "OPS (wk)",
+            })
+            if sel_m1 != "adj_score":
+                t1 = t1.rename(columns={"adj_score": "Adj.Score"})
+            f1 = {vcol: "{:.1f}" if sel_m1 == "adj_score" else ("{:+.3f}" if sel_m1 == "d_ops_wk" else "{:+.1f}")}
+            if "Adj.Score" in t1.columns:
+                f1["Adj.Score"] = "{:.1f}"
+            if "OPS (wk)" in t1.columns:
+                f1["OPS (wk)"] = "{:.3f}"
+            sty1 = t1.style.format(f1, na_rep="—")
+            if sel_m1 == "adj_score":
+                sty1 = sty1.background_gradient(subset=[vcol], cmap="YlOrRd")
+            elif sel_m1 == "d_ops_wk":
+                sty1 = sty1.background_gradient(subset=[vcol], cmap="RdYlGn", vmin=-0.4, vmax=0.4)
+            else:
+                sty1 = sty1.background_gradient(subset=[vcol], cmap="RdYlGn", vmin=-20, vmax=20)
+            show_table(sty1, height=420)
+            export_csv(t1, f"week_by_week_{_wk_label.get(sel_wk, 'week')}.csv".replace(" ", "_").replace("'", ""),
+                       T("changes_dl_csv", lang=lang))
+
+        # ── 2) who repeats in the top X% ──────────────────────────────────────
+        st.divider()
+        section(T("wbw_section2", lang=lang))
+        c1, c2, c3 = st.columns([2, 2, 2])
+        with c1:
+            sel_m2 = st.selectbox(T("wbw_pick_metric", lang=lang), wbw_cols, index=0,
+                                  format_func=lambda c: wbw_labels[c], key="wbw_metric2")
+        with c2:
+            top_pct = st.slider(T("wbw_pick_pct", lang=lang), 1, 100, 5, 1, key="wbw_pct")
+        with c3:
+            sel_dir2 = st.radio(T("wbw_pick_direction", lang=lang), _dir_options(), key="wbw_dir2")
+        top_tbl = weekly_top_pct_counts(bd_league, sel_m2, float(top_pct), mode=_dir_mode(sel_dir2))
+        if not top_tbl.empty:
+            top_tbl = top_tbl[top_tbl["weeks_in_top"] > 0]
+        if top_tbl.empty:
+            empty(T("wbw_empty_top", lang=lang))
+        else:
+            t2 = top_tbl.rename(columns={
+                "batter_name": T("col_batter", lang=lang), "batter_team": T("period_col_team", lang=lang),
+                "weeks_in_top": T("wbw_col_weeks_in_top", lang=lang),
+                "weeks_observed": T("wbw_col_weeks_obs", lang=lang), "share_pct": T("wbw_col_share", lang=lang),
+            })
+            sty2 = (t2.style.format({T("wbw_col_share", lang=lang): "{:.1f}%"})
+                    .background_gradient(subset=[T("wbw_col_weeks_in_top", lang=lang)], cmap="YlOrRd"))
+            show_table(sty2, height=420)
+            export_csv(t2, "weeks_in_top_pct.csv", T("changes_dl_csv", lang=lang))
+
+        # ── 3) do the adjustments actually move OPS? ──────────────────────────
+        st.divider()
+        section(T("wbw_section3", lang=lang))
+        with st.expander(T("adj_score_explain_header", lang=lang)):
+            st.markdown(T("adj_score_explain_body", lang=lang))
+        min_pa_wbw = st.slider(T("wbw_min_pa", lang=lang), 5, 60, 12, 1, key="wbw_min_pa")
+        st.caption(T("wbw_section3_caption", lang=lang, n=min_pa_wbw))
+        if data_source == "syntetyczne":
+            st.info(T("wbw_synthetic_caveat", lang=lang))
+        res = adjustments_vs_ops(bd_league, min_pa=min_pa_wbw)
+        if res["n"] < 10 or res["corr"].empty:
+            st.info(T("wbw_too_few", lang=lang))
+        else:
+            if pd.notna(res["r_adj_dops"]) and pd.notna(res["q1_dops"]) and pd.notna(res["q4_dops"]):
+                st.markdown(T("wbw_headline", lang=lang, q4=res["q4_dops"], q1=res["q1_dops"],
+                              r=res["r_adj_dops"], n=res["n"]))
+            st.plotly_chart(chart_adj_vs_ops(res["data"], lang=lang), use_container_width=True, key="wbw_scatter")
+
+            st.markdown("**" + T("wbw_quartile_title", lang=lang) + "**")
+            qt = res["quartiles"].rename(columns={
+                "adj_q": "Q", "n": T("team_col_n", lang=lang), "avg_adj": T("team_col_avgadj", lang=lang),
+                "avg_ops": "OPS (wk)", "avg_dops": "Δ OPS (wk)"})
+            qt["Q"] = qt["Q"].astype(str)
+            qsty = (qt.style.format({T("team_col_avgadj", lang=lang): "{:.1f}", "OPS (wk)": "{:.3f}", "Δ OPS (wk)": "{:+.3f}"})
+                    .background_gradient(subset=["Δ OPS (wk)"], cmap="RdYlGn", vmin=-0.1, vmax=0.1))
+            show_table(qsty)
+
+            st.markdown("**" + T("wbw_corr_table_title", lang=lang) + "**")
+            ct = res["corr"].copy()
+            ct["metric"] = ct["metric"].map(lambda m: "Adjustment Score" if m == "adj_score" else
+                                           wbw_labels.get(m, m.replace("d_", "Δ ")))
+            ct = ct.rename(columns={"metric": T("wbw_col_metric", lang=lang), "r_ops": T("wbw_col_r_ops", lang=lang),
+                                    "r_dops": T("wbw_col_r_dops", lang=lang), "n": T("team_col_n", lang=lang)})
+            rc = [T("wbw_col_r_ops", lang=lang), T("wbw_col_r_dops", lang=lang)]
+            csty = ct.style.format({c: "{:+.3f}" for c in rc}).background_gradient(subset=rc, cmap="RdYlGn", vmin=-0.3, vmax=0.3)
+            show_table(csty, height=520)
+            export_csv(ct, "adjustments_vs_ops_correlations.csv", T("changes_dl_csv", lang=lang))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
