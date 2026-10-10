@@ -244,7 +244,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     live_fetch_range: tuple | None = None
 
     for year in sorted(seasons):
-        p = Path(f"data/pitch_mix_{year}.parquet")
+        p = Path(f"pitch_mix_{year}.parquet")
         if p.exists():
             try:
                 df_p = pd.read_parquet(p)
