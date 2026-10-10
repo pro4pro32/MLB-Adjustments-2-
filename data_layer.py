@@ -228,7 +228,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     """
     Wczytuje dane dla wybranych sezonów.
     Priorytety:
-      1. data/pitch_mix_RRRR.parquet  (z data_pipeline.ipynb)  — zawsze próbowane, szybkie
+      1. pitch_mix_RRRR.parquet  (z data_pipeline.ipynb)  — zawsze próbowane, szybkie
       2. pybaseball Statcast — TYLKO jeśli use_live=True (opt-in), i TYLKO ostatnie
          `live_days_back` dni sezonu (nie cały sezon!)
       3. Dane syntetyczne (zawsze dostępne, domyślny bezpieczny fallback)
@@ -261,7 +261,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     if frames and len(frames) == len(seasons):
         return pd.concat(frames, ignore_index=True), source
 
-    missing = [y for y in seasons if not Path(f"data/pitch_mix_{y}.parquet").exists()]
+    missing = [y for y in seasons if not Path(f"pitch_mix_{y}.parquet").exists()]
     if missing and use_live:
         try:
             from pybaseball import statcast, playerid_reverse_lookup  # type: ignore
