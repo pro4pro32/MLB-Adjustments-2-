@@ -524,5 +524,63 @@ div[data-testid="stMetricLabel"] {
 .html-table-wrap td { padding: 5px 10px; border-bottom: 1px solid var(--bg3); text-align: right; white-space: nowrap; color: var(--text); }
 .html-table-wrap td:nth-child(2), .html-table-wrap th:nth-child(2) { text-align: left; }
 .html-table-wrap tr:hover td { background: var(--bg3); }
+
+/* v7.2: force the dark look whatever Streamlit theme is active (e.g. .streamlit/config.toml missing + light browser) */
+html { color-scheme: dark; }
+.stApp, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"],
+[data-testid="stMainBlockContainer"], [data-testid="stBottom"], [data-testid="stBottomBlockContainer"] {
+    background-color: var(--bg) !important; color: var(--text) !important; }
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] { background-color: var(--bg) !important; }
+[data-testid="stHeader"] *, [data-testid="stToolbar"] * { color: var(--text) !important; }
+section[data-testid="stSidebar"], [data-testid="stSidebarContent"], [data-testid="stSidebarHeader"] { background-color: #0d1117 !important; }
+[data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="input"] > div, [data-baseweb="base-input"],
+[data-baseweb="textarea"], [data-baseweb="textarea"] > div,
+input[type="text"], input[type="password"], input[type="number"], input[type="search"], textarea {
+    background-color: var(--bg3) !important; color: var(--text) !important; border-color: var(--border) !important; }
+[data-baseweb="select"] *, [data-baseweb="input"] input, [data-baseweb="base-input"] input { color: var(--text) !important; }
+[data-baseweb="popover"], [data-baseweb="popover"] *, [data-baseweb="menu"], [data-baseweb="menu"] *,
+ul[role="listbox"], ul[role="listbox"] *, [role="tooltip"], [role="tooltip"] * {
+    background-color: var(--bg2) !important; color: var(--text) !important; }
+[data-baseweb="tag"] { background-color: var(--accent) !important; }
+[data-baseweb="tag"] * { color: #fff !important; background: transparent !important; }
+[data-testid="stFileUploaderDropzone"] { background-color: var(--bg2) !important; border-color: var(--border) !important; }
+[data-testid="stFileUploaderDropzone"] * { color: var(--text) !important; }
+[data-testid="stExpander"], [data-testid="stExpander"] details, [data-testid="stExpander"] summary {
+    background-color: var(--bg2) !important; border-color: var(--border) !important; }
+[data-testid="stExpander"] summary *, [data-testid="stExpander"] p, [data-testid="stExpander"] li { color: var(--text) !important; }
+[data-testid="stAlert"], [data-testid="stAlertContainer"] {
+    background-color: #0d2137 !important; border: 1px solid #1a3a5c !important; border-radius: 8px !important; }
+[data-testid="stAlert"] * { color: var(--text) !important; }
+.stButton > button, .stDownloadButton > button, [data-testid^="stBaseButton"] {
+    background-color: var(--bg2) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+[data-testid^="stBaseButton"] * { color: var(--text) !important; }
+[data-testid="stWidgetLabel"] p, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li,
+[data-testid="stRadio"] label p, [data-testid="stCheckbox"] label p, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] * {
+    color: var(--text) !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: var(--muted) !important; }
+button[data-baseweb="tab"], button[data-baseweb="tab"] p { color: var(--muted) !important; background: transparent !important; }
+button[data-baseweb="tab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] p { color: var(--accent) !important; }
+[data-testid="stChatMessage"], [data-testid="stChatInput"], [data-testid="stChatInput"] textarea { background-color: var(--bg2) !important; color: var(--text) !important; }
+[data-testid="stSliderThumbValue"], [data-testid="stTickBarMin"], [data-testid="stTickBarMax"] { color: var(--text) !important; }
+
+/* v7.2b: select chevron boxes, tab-scroll arrows, readable captions */
+[data-baseweb="select"] div { background-color: var(--bg3) !important; }
+[data-baseweb="select"] [data-baseweb="tag"] { background-color: var(--accent) !important; }
+[data-baseweb="select"] svg, [data-baseweb="tabs"] button:not([data-baseweb="tab"]) svg { fill: var(--text) !important; color: var(--text) !important; }
+[data-baseweb="tabs"] button:not([data-baseweb="tab"]) { background-color: var(--bg2) !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #a0a9b4 !important; }
+
+/* v7.2c: Streamlit >=1.5x uses react-aria widgets (role=group / combobox / date field) */
+[data-testid="stDateInputField"], [data-testid="stDateInputField"] input,
+[data-testid="stSelectboxVirtualDropdown"], [data-testid="stSelectboxVirtualDropdown"] *,
+[role="group"], [role="group"] > div, [role="group"] input, [role="combobox"], [role="listbox"], [role="option"],
+.react-aria-ComboBox, .react-aria-Popover, .react-aria-Popover *, code {
+    background-color: var(--bg3) !important; color: var(--text) !important; border-color: var(--border) !important; }
+[role="option"]:hover, [role="option"][data-focused="true"], [role="option"][aria-selected="true"] { background-color: #30363d !important; }
+.react-aria-ComboBox svg, [role="group"] svg, [data-testid="stDateInputField"] svg { fill: var(--text) !important; color: var(--text) !important; }
+
+/* v7.2d: tab-row scroll fade is a white gradient in the light theme */
+[data-baseweb="tabs"] div, [data-baseweb="tab-list"] { background-image: none !important; }
+[data-baseweb="tab-list"] { background-color: transparent !important; }
 </style>
 """

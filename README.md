@@ -1,4 +1,4 @@
-# MLB Pitch Mix Dashboard (v7.0)
+# MLB Pitch Mix Dashboard (v7.2.1)
 
 Batter-centric pitch-mix analyzer: shows how the *league's* approach to a hitter
 changes week over week, across **16 tracked categories**:
@@ -37,6 +37,22 @@ changes week over week, across **16 tracked categories**:
 - **Weekly digest generator**: auto-written markdown summary of the week's biggest movers,
   downloadable/copyable. Actually *sending* it (email/Slack) needs a separate scheduled job that
   calls `compute.generate_weekly_digest()` — not built into the Streamlit app itself.
+
+## v7.1/v7.2 — AI insights, tested release
+- **AI insights = local stats/ML first, Claude second.** `insights_engine.py` finds patterns (robust-z outliers, change-point
+  detection, k-means "approach clusters", bootstrap confidence intervals, noise thresholds) and builds a *compact evidence pack*.
+  Claude (`ai_client.py`) only explains that pack — raw rows are never sent, and it is instructed to use no other numbers.
+  Four places: **Player Report** (scouting report), **Team & Digest** (league digest), **Period Comparison / Week by Week**
+  ("Explain this with AI"), and the **Ask the data** chat tab (Claude calls local tools: profiles, top movers, period
+  comparisons, adjustments-vs-OPS). Every AI text has an "Evidence sent to Claude" expander so you can check the numbers.
+- **Setup:** add `ANTHROPIC_API_KEY = "sk-ant-..."` to Streamlit *Secrets* (or paste it in the sidebar for one session).
+  Pick the model in the sidebar (Sonnet 5.5 default, Haiku 4.5 cheapest, Opus 5.5 deepest). You pay Anthropic per request;
+  results are cached per selection and only re-generated when you click the button.
+- On synthetic demo data the AI is told to say so — it will not present simulated numbers as real player performance.
+- **v7.2 theme fix:** found by simulating a deployment *without* the `.streamlit` folder in a light-mode browser: the page
+  went white while the text stayed light (unreadable). The app now forces its dark look itself, so it stays readable even then.
+  Keep `.streamlit/config.toml` in the repo anyway (exact colours, fonts).
+- Fixed in testing: `st.dataframe(height=None)` crash on current Streamlit; test file accidentally shipped in the zip.
 
 ## v7.0 — real-data upload, Week by Week tab, honest English UI
 - **Upload real data**: sidebar → "Upload your own data". Accepts CSV/Parquet from `export_statcast_data.py`

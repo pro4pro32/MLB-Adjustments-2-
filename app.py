@@ -24,6 +24,8 @@ from config import (
     CAT_COLORS, ALL_CATEGORIES, PITCH_TYPES, MIN_RELIABLE_PITCHES, BASELINE_WEEKS,
 )
 from data_layer import load_data, load_uploaded_files
+from ai_ui import (AIContext, render_ai_sidebar, render_ai_scouting, render_ai_digest,
+                   render_ai_explain_period, render_ai_explain_wbw, render_ai_chat)
 from compute import (
     precompute_all,
     filter_batter_weekly, filter_batter_delta,
@@ -113,6 +115,8 @@ with st.sidebar:
     _uploads = st.file_uploader(T("sidebar_upload_label", lang=lang), type=["csv", "parquet"],
                                 accept_multiple_files=True, key="data_upload",
                                 help=T("sidebar_upload_help", lang=lang))
+
+ai_cfg = render_ai_sidebar(lang)
 
 with st.spinner(f"⚾ {T('sidebar_app_name', lang=lang)}…"):
     if _uploads:
@@ -212,12 +216,14 @@ render_kpis([
 # ─────────────────────────────────────────────────────────────────────────────
 #  TABY
 # ─────────────────────────────────────────────────────────────────────────────
+ai_ctx = AIContext(bd_league=bd_league, bw_all=bw_all, raw_df=raw_df, data_source=data_source, lang=lang, cfg=ai_cfg)
+
 (tab_profile, tab_report, tab_velo, tab_compare, tab_changes,
- tab_matchup, tab_ranking, tab_team, tab_period, tab_wbw) = st.tabs([
+ tab_matchup, tab_ranking, tab_team, tab_period, tab_wbw, tab_chat) = st.tabs([
     T("tab_profile", lang=lang), T("tab_report", lang=lang), T("tab_velo", lang=lang),
     T("tab_compare", lang=lang), T("tab_changes", lang=lang), T("tab_matchup", lang=lang),
     T("tab_ranking", lang=lang), T("tab_team", lang=lang), T("tab_period", lang=lang),
-    T("tab_wbw", lang=lang),
+    T("tab_wbw", lang=lang), T("ai_tab_chat", lang=lang),
 ])
 
 
@@ -370,6 +376,9 @@ with tab_report:
                 st.plotly_chart(chart_sustained_movers(sust, lang=lang), use_container_width=True, key="report_sustained_movers")
                 export_csv(sust, "sustained_movers.csv", T("report_dl_sustained", lang=lang))
 
+
+    st.divider()
+    render_ai_scouting(ai_ctx, st.session_state.get("report_batter"))
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 3 – VELOCITY & KONTEKST (platoon/count)
@@ -750,6 +759,9 @@ with tab_team:
         digest_text = generate_weekly_digest(bd, top_n=digest_n, lang=lang)
         render_digest_block(digest_text, lang=lang)
 
+    st.divider()
+    render_ai_digest(ai_ctx)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 9 – PERIOD COMPARISON  (v6.5: custom week range A vs B, whole league)
@@ -855,6 +867,9 @@ with tab_period:
                     use_container_width=True, height=600,
                 )
                 export_csv(comp, "period_comparison_full.csv", T("period_dl_csv", lang=lang))
+
+                render_ai_explain_period(ai_ctx, comp=comp, delta_cols=delta_cols, delta_labels=delta_labels,
+                                         weeks_p1=weeks_p1, weeks_p2=weeks_p2, min_pitches=min_pitches_period)
 
                 st.divider()
                 section(T("period_corr_header", lang=lang))
@@ -1029,6 +1044,17 @@ with tab_wbw:
             show_table(csty, height=520)
             export_csv(ct, "adjustments_vs_ops_correlations.csv", T("changes_dl_csv", lang=lang))
 
+        st.divider()
+        render_ai_explain_wbw(ai_ctx, week_start=sel_wk, m1=sel_m1,
+                              mode1=("up" if sel_m1 == "adj_score" else _dir_mode(sel_dir1)),
+                              m2=sel_m2, top_pct=top_pct, mode2=_dir_mode(sel_dir2), min_pa=min_pa_wbw, labels=wbw_labels)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TAB 11 – ASK THE DATA  (v7.1, AI chat)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_chat:
+    render_ai_chat(ai_ctx)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  FOOTER

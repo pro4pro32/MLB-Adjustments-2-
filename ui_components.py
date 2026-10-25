@@ -835,13 +835,16 @@ def show_theme_warning(lang: str | None = None) -> None:
 def show_table(data, height: int | None = None, **kwargs) -> None:
     """Dark theme active -> normal interactive st.dataframe. Theme file missing (light theme:
     dataframe canvas turns light while our CSS is dark = unreadable) -> HTML table in our own dark CSS."""
+    _kw = {"use_container_width": True}
+    if height:
+        _kw["height"] = int(height)
     if _theme_is_dark():
-        st.dataframe(data, use_container_width=True, height=height)
+        st.dataframe(data, **_kw)
         return
     try:
         html = data.to_html() if hasattr(data, "to_html") else pd.DataFrame(data).to_html()
     except Exception:
-        st.dataframe(data, use_container_width=True, height=height)
+        st.dataframe(data, **_kw)
         return
     h = int(height) if height else 520
     st.markdown(f'<div class="html-table-wrap" style="max-height:{h}px">{html.replace(chr(10), "")}</div>',
