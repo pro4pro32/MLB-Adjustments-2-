@@ -379,7 +379,7 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     have_seasons = {int(f["season"].iloc[0]) for f in frames} if frames else set()
     for year in sorted(seasons):
         if year not in have_seasons:
-            frames.append(_gen_season(year))
+            frames.append(_gen_season_cached(year))
 
     df_out = pd.concat(frames, ignore_index=True)
 
@@ -538,3 +538,127 @@ def load_uploaded_files(files: tuple) -> tuple[pd.DataFrame, str]:
         frames.append(df)
     out = _finalize_frame(pd.concat(frames, ignore_index=True))
     return out, "upload"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  v7.3: auto-discovery of data files in the repo (data/ and repo root)
+# ─────────────────────────────────────────────────────────────────────────────
+def classify_columns(cols) -> str:
+    """What kind of file is this, judging by its header only."""
+    c = set(cols or [])
+    if not c:
+        return "unreadable"
+    if set(_REQUIRED_UPLOAD_COLS) <= c:
+        return "pitch"
+    if {"game_date", "pitch_type", "batter"} <= c and ("player_name" in c or "pitcher_name" in c):
+        return "pitch_raw"
+    if {"batter_name", "pitch_group", "pitch_type", "zone", "swings"} <= c:
+        return "bat_zone"
+    if {"batter_name", "pitch_group", "total_swings"} <= c:
+        return "bat_pitchgroup"
+    if {"batter_name", "total_swings", "avg_bat_speed"} <= c:
+        return "bat_players"
+    return "unknown"
+
+
+def season_from_name(name: str):
+    import re
+    m = re.search(r"(20\d{2})", name or "")
+    return int(m.group(1)) if m else None
+
+
+def _header_of_path(p):
+    try:
+        if str(p).lower().endswith(".parquet"):
+            import pyarrow.parquet as pq
+            return list(pq.ParquetFile(str(p)).schema_arrow.names)
+        return list(pd.read_csv(p, nrows=0).columns)
+    except Exception:
+        return None
+
+
+def classify_bytes(name: str, data: bytes) -> str:
+    import io
+    try:
+        if name.lower().endswith(".parquet"):
+            import pyarrow.parquet as pq
+            cols = list(pq.ParquetFile(io.BytesIO(data)).schema_arrow.names)
+        else:
+            cols = list(pd.read_csv(io.BytesIO(data), nrows=0).columns)
+        return classify_columns(cols)
+    except Exception:
+        return "unreadable"
+
+
+@st.cache_data(show_spinner=False, ttl=20)
+def discover_data_files() -> list:
+    """Look for CSV/Parquet files in ./data and the repo root and say what each one is."""
+    out, seen = [], set()
+    for d in ("data", "."):
+        base = Path(d)
+        if not base.is_dir():
+            continue
+        for p in sorted(base.iterdir()):
+            if not p.is_file() or p.suffix.lower() not in (".csv", ".parquet"):
+                continue
+            rp = str(p.resolve())
+            if rp in seen:
+                continue
+            seen.add(rp)
+            cols = _header_of_path(p)
+            st_ = p.stat()
+            out.append({"path": str(p), "name": p.name, "kind": classify_columns(cols) if cols else "unreadable",
+                        "season": season_from_name(p.name), "size_mb": round(st_.st_size / 1e6, 1),
+                        "mtime": int(st_.st_mtime), "size": int(st_.st_size), "where": "repo"})
+    return out
+
+
+def _prepare_pitch_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    if all(c in df.columns for c in _REQUIRED_UPLOAD_COLS):
+        return df
+    if {"game_date", "pitch_type", "batter"}.issubset(df.columns) and ("player_name" in df.columns or "pitcher_name" in df.columns):
+        return _normalize_raw_statcast(df)
+    raise ValueError(f"'{name}' is not a pitch-by-pitch file.")
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def load_pitch_paths(sig: tuple) -> tuple[pd.DataFrame, str]:
+    """sig = ((path, mtime, size), ...) — the cache key changes only when a file changes."""
+    frames = []
+    for path, _mt, _sz in sig:
+        df = pd.read_parquet(path) if str(path).lower().endswith(".parquet") else pd.read_csv(path, low_memory=False)
+        frames.append(_prepare_pitch_frame(df, Path(path).name))
+    return _finalize_frame(pd.concat(frames, ignore_index=True)), "files"
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def load_bat_tracking(items: tuple) -> dict:
+    """items = ((name, kind, path_or_None, mtime, bytes_or_None), ...) for bat_players / bat_zone files."""
+    import io
+    players, zones = [], []
+    for name, kind, path, _mt, data in items:
+        src = path if path else io.BytesIO(data)
+        df = pd.read_parquet(src) if name.lower().endswith(".parquet") else pd.read_csv(src)
+        df["season"] = season_from_name(name) or 0
+        (players if kind == "bat_players" else zones).append(df)
+    return {"players": pd.concat(players, ignore_index=True) if players else pd.DataFrame(),
+            "zone": pd.concat(zones, ignore_index=True) if zones else pd.DataFrame()}
+
+
+def _gen_season_cached(year: int) -> pd.DataFrame:
+    """Synthetic demo data costs ~8 s/season; keep a parquet copy in the temp dir so a restart/other
+    visitor doesn't pay again. The current season's copy expires daily (it extends to today)."""
+    import os, tempfile
+    tag = pd.Timestamp.today().strftime("%Y%m%d") if year == pd.Timestamp.today().year else "static"
+    path = os.path.join(tempfile.gettempdir(), f"pitchmix_synth_v73_{year}_{tag}.parquet")
+    try:
+        if os.path.exists(path):
+            return pd.read_parquet(path)
+    except Exception:
+        pass
+    df = _gen_season(year)
+    try:
+        df.to_parquet(path, index=False)
+    except Exception:
+        pass
+    return df

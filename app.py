@@ -23,9 +23,17 @@ from config import (
     APP_CSS, AVAILABLE_SEASONS, CAT_COLS, PITCH_CAT_COLS, ZONE_CAT_COLS,
     CAT_COLORS, ALL_CATEGORIES, PITCH_TYPES, MIN_RELIABLE_PITCHES, BASELINE_WEEKS,
 )
-from data_layer import load_data, load_uploaded_files
+from data_layer import (load_data, load_uploaded_files, discover_data_files, classify_bytes, load_pitch_paths,
+                        load_bat_tracking)
+from bat_ui import render_bat_tab, render_data_panel, render_demo_banner
 from ai_ui import (AIContext, render_ai_sidebar, render_ai_scouting, render_ai_digest,
                    render_ai_explain_period, render_ai_explain_wbw, render_ai_chat)
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def cached_period_comparison(_raw_df, _bw_all, data_key, w1, w2, min_pitches):
+    """Period comparison scans the raw pitches; cache it so it is not recomputed on every click."""
+    return compute_period_comparison(_raw_df, _bw_all, list(w1), list(w2), min_pitches=min_pitches)
 from compute import (
     precompute_all,
     filter_batter_weekly, filter_batter_delta,
@@ -91,7 +99,7 @@ with st.sidebar:
     st.markdown(T("sidebar_app_name", lang=lang))
     st.markdown(T("sidebar_seasons_header", lang=lang))
     _seasons_sel = st.multiselect(
-        T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2025, 2026],
+        T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2026],
         label_visibility="collapsed", key="_seasons_pre",
     )
     if not _seasons_sel:
@@ -118,16 +126,35 @@ with st.sidebar:
 
 ai_cfg = render_ai_sidebar(lang)
 
+_repo_files = discover_data_files()
+_up_items = tuple((f.name, f.getvalue()) for f in _uploads) if _uploads else ()
+_up_kinds = [classify_bytes(n_, b_) for n_, b_ in _up_items]
+_PITCH_KINDS = ("pitch", "pitch_raw")
+_pitch_up = tuple(it for it, k in zip(_up_items, _up_kinds) if k in _PITCH_KINDS)
+_pitch_repo = [f for f in _repo_files if f["kind"] in _PITCH_KINDS]
+
 with st.spinner(f"⚾ {T('sidebar_app_name', lang=lang)}…"):
-    if _uploads:
+    if _pitch_up:
         try:
-            raw_df, data_source = load_uploaded_files(tuple((f.name, f.getvalue()) for f in _uploads))
+            raw_df, data_source = load_uploaded_files(_pitch_up)
         except Exception as _e:
             st.error(T("upload_error", lang=lang, err=str(_e)))
             st.stop()
         _seasons_sel = sorted(int(x) for x in raw_df["season"].unique())
+    elif _pitch_repo:
+        raw_df, data_source = load_pitch_paths(tuple((f["path"], f["mtime"], f["size"]) for f in _pitch_repo))
+        _seasons_sel = sorted(int(x) for x in raw_df["season"].unique())
     else:
         raw_df, data_source = load_data(tuple(sorted(_seasons_sel)), use_live=_use_live, live_days_back=_live_days)
+
+_bat_items = (tuple((f["name"], f["kind"], f["path"], f["mtime"], None) for f in _repo_files if f["kind"] in ("bat_players", "bat_zone"))
+              + tuple((n_, k, None, 0, b_) for (n_, b_), k in zip(_up_items, _up_kinds) if k in ("bat_players", "bat_zone")))
+bat_data = load_bat_tracking(_bat_items) if _bat_items else None
+_has_bat = bool(bat_data and (not bat_data["players"].empty or not bat_data["zone"].empty))
+_all_files = list(_repo_files) + [{"name": n_, "kind": k, "where": "upload"} for (n_, _b), k in zip(_up_items, _up_kinds)]
+render_data_panel(lang, _all_files, data_source)
+render_demo_banner(lang, _all_files, data_source)
+_data_key = f"{data_source}|{len(raw_df)}|{raw_df['game_date'].max()}"
 
 raw_df["game_date"] = pd.to_datetime(raw_df["game_date"])
 
@@ -149,8 +176,8 @@ pc_ms    = pc["perf_ms"]
 season_str = ", ".join(str(y) for y in sorted(filters.seasons))
 if data_source in ("parquet", "syntetyczne"):
     _source_label = {"parquet": T("source_parquet", lang=lang), "syntetyczne": T("source_synthetic", lang=lang)}[data_source]
-elif data_source == "upload":
-    _source_label = T("source_upload", lang=lang) + f" {raw_df['game_date'].min().date()} → {raw_df['game_date'].max().date()}"
+elif data_source in ("upload", "files"):
+    _source_label = T("source_upload" if data_source == "upload" else "source_files", lang=lang) + f" {raw_df['game_date'].min().date()} → {raw_df['game_date'].max().date()}"
 elif "Statcast" in data_source:
     # data_source looks like "Statcast (live, 2026-08-15 to 2026-08-29)" — show the
     # actual fetched window as-is so it's clear exactly how current the data is,
@@ -158,7 +185,7 @@ elif "Statcast" in data_source:
     _source_label = data_source
 else:
     _source_label = data_source
-src_icon = "📂" if data_source == "parquet" else ("📤" if data_source == "upload" else ("🌐" if "Statcast" in data_source else "🎲"))
+src_icon = "📂" if data_source == "parquet" else ("📤" if data_source in ("upload", "files") else ("🌐" if "Statcast" in data_source else "🎲"))
 st.markdown(
     f'<span class="perf-pill">' +
     T("perf_pill", lang=lang, icon=src_icon, source=_source_label, season_str=season_str,
@@ -218,19 +245,25 @@ render_kpis([
 # ─────────────────────────────────────────────────────────────────────────────
 ai_ctx = AIContext(bd_league=bd_league, bw_all=bw_all, raw_df=raw_df, data_source=data_source, lang=lang, cfg=ai_cfg)
 
-(tab_profile, tab_report, tab_velo, tab_compare, tab_changes,
- tab_matchup, tab_ranking, tab_team, tab_period, tab_wbw, tab_chat) = st.tabs([
-    T("tab_profile", lang=lang), T("tab_report", lang=lang), T("tab_velo", lang=lang),
-    T("tab_compare", lang=lang), T("tab_changes", lang=lang), T("tab_matchup", lang=lang),
-    T("tab_ranking", lang=lang), T("tab_team", lang=lang), T("tab_period", lang=lang),
-    T("tab_wbw", lang=lang), T("ai_tab_chat", lang=lang),
-])
+_VIEWS = ["profile", "report", "velo", "compare", "changes", "matchup", "ranking", "team", "period", "wbw", "bat", "chat"]
+_VIEW_LABELS = {"profile": T("tab_profile", lang=lang), "report": T("tab_report", lang=lang), "velo": T("tab_velo", lang=lang),
+                "compare": T("tab_compare", lang=lang), "changes": T("tab_changes", lang=lang), "matchup": T("tab_matchup", lang=lang),
+                "ranking": T("tab_ranking", lang=lang), "team": T("tab_team", lang=lang), "period": T("tab_period", lang=lang),
+                "wbw": T("tab_wbw", lang=lang), "bat": T("tab_bat", lang=lang), "chat": T("ai_tab_chat", lang=lang)}
+# Only the selected view is computed/rendered (was: all 11 tabs on every click). Widgets of views that are not on
+# screen would be forgotten by Streamlit, so re-assign their values to keep selections when switching views.
+for _k in ['chg_dir', 'chg_n', 'cmp_batters', 'cmp_cat', 'cmp_mode', 'digest_n', 'live_days_back', 'mov_n', 'mq_b', 'mq_p_drill', 'period2_range', 'period_min_pitches', 'period_sort_col', 'period_sort_dir', 'profile_batter', 'rank_base_toggle', 'rank_n', 'rank_rel_toggle', 'report_rel_toggle', 'report_use_base', 'velo_ctx_batter', 'wbw_dir1', 'wbw_dir2', 'wbw_metric1', 'wbw_metric2', 'wbw_min_pa', 'wbw_pct', 'zone_mode', 'zone_rank_cat', 'bat_season', 'bat_batter', 'bat_min_swings', 'bat_zone_group', 'bat_zone_metric']:
+    if _k in st.session_state:
+        st.session_state[_k] = st.session_state[_k]
+if "main_nav" not in st.session_state:
+    st.session_state["main_nav"] = "bat" if (data_source == "syntetyczne" and _has_bat) else "profile"
+_view = st.radio("nav", _VIEWS, format_func=lambda v: _VIEW_LABELS[v], horizontal=True, label_visibility="collapsed", key="main_nav")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 1 – PROFIL PAŁKARZA
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_profile:
+if _view == "profile":
     st.markdown(T("profile_intro", lang=lang))
 
     if bw.empty:
@@ -317,7 +350,7 @@ with tab_profile:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 2 – PLAYER REPORT (shareable)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_report:
+if _view == "report":
     section(T("report_header", lang=lang))
     st.caption(T("report_caption", lang=lang))
 
@@ -383,7 +416,7 @@ with tab_report:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 3 – VELOCITY & KONTEKST (platoon/count)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_velo:
+if _view == "velo":
     section(T("velo_header", lang=lang))
     st.caption(T("velo_caption", lang=lang))
 
@@ -430,7 +463,7 @@ with tab_velo:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 4 – PORÓWNANIE
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_compare:
+if _view == "compare":
     section(T("compare_header", lang=lang))
     st.caption(T("compare_caption", lang=lang))
 
@@ -481,7 +514,7 @@ with tab_compare:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 5 – ZMIANY MATCHUP
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_changes:
+if _view == "changes":
     section(T("changes_header", lang=lang))
     st.caption(T("changes_caption", lang=lang))
 
@@ -521,7 +554,7 @@ with tab_changes:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 6 – BATTER × WEEK MATCHUPS  (v6.3: batter-first, not pitcher-first)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_matchup:
+if _view == "matchup":
     section(T("matchup_header_v2", lang=lang))
     st.caption(T("matchup_caption_v2", lang=lang))
 
@@ -625,7 +658,7 @@ with tab_matchup:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 7 – RANKINGI
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_ranking:
+if _view == "ranking":
     section(T("rank_header", lang=lang))
     st.caption(T("rank_caption", lang=lang))
     with st.expander(T("adj_score_explain_header", lang=lang)):
@@ -728,7 +761,7 @@ with tab_ranking:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 8 – TEAM VIEW & WEEKLY DIGEST
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_team:
+if _view == "team":
     section(T("team_header", lang=lang))
     st.caption(T("team_caption", lang=lang))
     if bd.empty:
@@ -766,7 +799,7 @@ with tab_team:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 9 – PERIOD COMPARISON  (v6.5: custom week range A vs B, whole league)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_period:
+if _view == "period":
     section(T("period_header", lang=lang))
     st.caption(T("period_caption", lang=lang))
 
@@ -810,7 +843,7 @@ with tab_period:
 
             min_pitches_period = st.slider(T("period_min_pitches", lang=lang), 5, 200, 30, key="period_min_pitches")
 
-            comp = compute_period_comparison(raw_df, bw_all, weeks_p1, weeks_p2, min_pitches=min_pitches_period)
+            comp = cached_period_comparison(raw_df, bw_all, _data_key, tuple(weeks_p1), tuple(weeks_p2), min_pitches_period)
 
             if comp.empty:
                 empty(T("period_empty", lang=lang))
@@ -901,7 +934,7 @@ with tab_period:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 10 – WEEK BY WEEK  (v7.0)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_wbw:
+if _view == "wbw":
     section(T("wbw_header", lang=lang))
     st.caption(T("wbw_caption", lang=lang))
 
@@ -1053,8 +1086,11 @@ with tab_wbw:
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 11 – ASK THE DATA  (v7.1, AI chat)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_chat:
+if _view == "chat":
     render_ai_chat(ai_ctx)
+
+if _view == "bat":
+    render_bat_tab(bat_data, lang)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  FOOTER
