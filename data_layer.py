@@ -222,7 +222,6 @@ def _gen_season(year: int) -> pd.DataFrame:
 
 # ── Ładowanie danych ──────────────────────────────────────────────────────────
 
-@st.cache_data(show_spinner=False, ttl=3600)
 def load_data(seasons: tuple[int, ...], use_live: bool = False,
               live_days_back: int = 14) -> tuple[pd.DataFrame, str]:
     """
@@ -406,12 +405,13 @@ def load_data(seasons: tuple[int, ...], use_live: bool = False,
     return _optimize_dtypes(df_out), source
 
 
-def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+def _optimize_dtypes(df: pd.DataFrame, copy: bool = True) -> pd.DataFrame:
     """v6.1: downcast NUMERIC dtypes to reduce memory footprint on constrained hosting.
     NOTE: deliberately does NOT convert name/team/pitch_type columns to 'category' —
     those get string-concatenated (e.g. batter_name + ' · ' + week_label) all over
     compute.py/ui_components.py, and pandas Categorical doesn't support + with str."""
-    df = df.copy()
+    if copy:
+        df = df.copy()
     float_cols = ["release_speed", "exit_velo"]
     for c in float_cols:
         if c in df.columns:
@@ -493,7 +493,6 @@ def _normalize_raw_statcast(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _finalize_frame(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
     df["game_date"] = pd.to_datetime(df["game_date"])
     if "season" not in df.columns:
         df["season"] = df["game_date"].dt.year
@@ -509,12 +508,12 @@ def _finalize_frame(df: pd.DataFrame) -> pd.DataFrame:
             df[c] = df[c].astype(str).str.strip().str.lower().isin(["true", "1", "1.0"])
         else:
             df[c] = df[c].fillna(False).astype(bool)
-    df["zone"] = pd.to_numeric(df["zone"], errors="coerce").fillna(5).astype(int)
-    df = df.dropna(subset=["pitcher_name", "batter_name", "pitch_type"])
-    return _optimize_dtypes(df)
+    df["zone"] = pd.to_numeric(df["zone"], errors="coerce").fillna(5).astype("int16")
+    if df[["pitcher_name", "batter_name", "pitch_type"]].isna().any().any():   # only copy the frame if rows must go
+        df = df.dropna(subset=["pitcher_name", "batter_name", "pitch_type"])
+    return _optimize_dtypes(df, copy=False)
 
 
-@st.cache_data(show_spinner=False, max_entries=2)
 def load_uploaded_files(files: tuple) -> tuple[pd.DataFrame, str]:
     """files = ((filename, bytes), ...). Accepts CSV or Parquet. Either the output of
     export_statcast_data.py, or a raw pitch-by-pitch Statcast Search CSV."""
@@ -621,14 +620,15 @@ def _prepare_pitch_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
     raise ValueError(f"'{name}' is not a pitch-by-pitch file.")
 
 
-@st.cache_data(show_spinner=False, max_entries=2)
 def load_pitch_paths(sig: tuple) -> tuple[pd.DataFrame, str]:
     """sig = ((path, mtime, size), ...) — the cache key changes only when a file changes."""
     frames = []
     for path, _mt, _sz in sig:
         df = pd.read_parquet(path) if str(path).lower().endswith(".parquet") else pd.read_csv(path, low_memory=False)
         frames.append(_prepare_pitch_frame(df, Path(path).name))
-    return _finalize_frame(pd.concat(frames, ignore_index=True)), "files"
+    df = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
+    del frames
+    return _finalize_frame(df), "files"
 
 
 @st.cache_data(show_spinner=False, max_entries=2)

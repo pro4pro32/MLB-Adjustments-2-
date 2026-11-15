@@ -26,14 +26,59 @@ from config import (
 from data_layer import (load_data, load_uploaded_files, discover_data_files, classify_bytes, load_pitch_paths,
                         load_bat_tracking)
 from bat_ui import render_bat_tab, render_data_panel, render_demo_banner
+from dataset import build_from_frame, release_memory
 from ai_ui import (AIContext, render_ai_sidebar, render_ai_scouting, render_ai_digest,
                    render_ai_explain_period, render_ai_explain_wbw, render_ai_chat)
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def cached_period_comparison(_raw_df, _bw_all, data_key, w1, w2, min_pitches):
-    """Period comparison scans the raw pitches; cache it so it is not recomputed on every click."""
-    return compute_period_comparison(_raw_df, _bw_all, list(w1), list(w2), min_pitches=min_pitches)
+def cached_period_comparison(_bw_all, _week_extra, data_key, w1, w2, min_pitches):
+    """Cheap (small weekly tables only), cached so it is not recomputed on every click."""
+    return compute_period_comparison_agg(_bw_all, _week_extra, list(w1), list(w2), min_pitches=min_pitches)
+
+
+@st.cache_resource(show_spinner=False, max_entries=2)
+def filtered_tables(_pc, data_key, d_start, d_end, sel_batters, sel_pitchers, sel_pt, seasons, min_pitches, min_prev):
+    """Filter ONCE per combination of sidebar filters and share the result — previously every click re-filtered and
+    re-copied the big matchup tables (538k rows for a full season), which is what made memory creep up."""
+    bw = filter_batter_weekly(_pc["batter_weekly"], d_start, d_end, list(sel_batters), list(seasons))
+    bd = filter_batter_delta(_pc["batter_delta"], d_start, d_end, list(sel_batters), list(seasons), min_pitches, min_prev)
+    mw = filter_matchup_weekly(_pc["matchup_weekly"], d_start, d_end, list(sel_pitchers), list(sel_batters), list(sel_pt), list(seasons))
+    md = filter_matchup_delta(_pc["matchup_delta"], d_start, d_end, list(sel_pitchers), list(sel_batters), list(sel_pt), list(seasons),
+                              min_pitches, min_prev)
+    velo = filter_velo_weekly(_pc["velo_weekly"], d_start, d_end, list(sel_batters))
+    # league-wide view (ignores the sidebar batter filter) for claims that must hold against the whole league
+    bd_league = bd if not sel_batters else filter_batter_delta(_pc["batter_delta"], d_start, d_end, [], list(seasons), min_pitches, min_prev)
+    return {"bw": bw, "bd": bd, "mw": mw, "md": md, "velo": velo, "bd_league": bd_league,
+            "n_pitchers": int(mw["pitcher_name"].nunique()) if not mw.empty else 0,
+            "n_matchups": int(mw.groupby(["pitcher_name", "batter_name"]).ngroups) if not mw.empty else 0}
+
+
+@st.cache_resource(show_spinner=False, max_entries=2)
+def build_from_uploads(sig, _items):
+    df, src = load_uploaded_files(_items)
+    ds = build_from_frame(df, src)
+    del df
+    release_memory()
+    return ds
+
+
+@st.cache_resource(show_spinner=False, max_entries=1)
+def build_from_paths(sig):
+    df, src = load_pitch_paths(sig)
+    ds = build_from_frame(df, src)
+    del df
+    release_memory()
+    return ds
+
+
+@st.cache_resource(show_spinner=False, max_entries=2, ttl=3600)
+def build_from_default(seasons, use_live, live_days):
+    df, src = load_data(seasons, use_live=use_live, live_days_back=live_days)
+    ds = build_from_frame(df, src)
+    del df
+    release_memory()
+    return ds
 from compute import (
     precompute_all,
     filter_batter_weekly, filter_batter_delta,
@@ -41,7 +86,7 @@ from compute import (
     generate_batter_insights,
     biggest_movers_leaderboard, latest_week_headline, batter_week_rank, batter_week_matchup_table,
     sustained_movers_leaderboard, team_rollup_table, generate_weekly_digest,
-    compute_period_comparison, compute_period_correlations,
+    compute_period_comparison, compute_period_comparison_agg, compute_period_correlations,
     weekly_top_pct_counts, adjustments_vs_ops,
 )
 from ui_components import (
@@ -58,6 +103,12 @@ from ui_components import (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+release_memory()  # hand back the previous run's garbage to the OS (keeps RSS from creeping up)
+# one season at a time: only the pitch files of the selected season(s) are loaded (memory ≈ 0.6 GB per full season)
+_repo_files = discover_data_files()
+_repo_seasons = sorted({f["season"] for f in _repo_files if f["kind"] in ("pitch", "pitch_raw") and f["season"]})
+_SEASON_OPTS = _repo_seasons or AVAILABLE_SEASONS
+_SEASON_DEFAULT = [max(_SEASON_OPTS)] if _repo_seasons else [2026]
 st.set_page_config(
     page_title="⚾ Pitch Mix Dashboard",
     page_icon="⚾",
@@ -99,11 +150,13 @@ with st.sidebar:
     st.markdown(T("sidebar_app_name", lang=lang))
     st.markdown(T("sidebar_seasons_header", lang=lang))
     _seasons_sel = st.multiselect(
-        T("sidebar_seasons_label", lang=lang), AVAILABLE_SEASONS, default=[2026],
+        T("sidebar_seasons_label", lang=lang), _SEASON_OPTS, default=_SEASON_DEFAULT,
         label_visibility="collapsed", key="_seasons_pre",
     )
     if not _seasons_sel:
-        _seasons_sel = [2026]
+        _seasons_sel = list(_SEASON_DEFAULT)
+    if _repo_seasons and len(_seasons_sel) > 1:
+        st.caption(T("season_memory_note", lang=lang))
 
     st.markdown(T("sidebar_live_header", lang=lang))
     _use_live = st.checkbox(
@@ -126,26 +179,27 @@ with st.sidebar:
 
 ai_cfg = render_ai_sidebar(lang)
 
-_repo_files = discover_data_files()
 _up_items = tuple((f.name, f.getvalue()) for f in _uploads) if _uploads else ()
 _up_kinds = [classify_bytes(n_, b_) for n_, b_ in _up_items]
 _PITCH_KINDS = ("pitch", "pitch_raw")
 _pitch_up = tuple(it for it, k in zip(_up_items, _up_kinds) if k in _PITCH_KINDS)
-_pitch_repo = [f for f in _repo_files if f["kind"] in _PITCH_KINDS]
+_pitch_repo = [f for f in _repo_files if f["kind"] in _PITCH_KINDS and (not f["season"] or f["season"] in _seasons_sel)]
 
 with st.spinner(f"⚾ {T('sidebar_app_name', lang=lang)}…"):
     if _pitch_up:
         try:
-            raw_df, data_source = load_uploaded_files(_pitch_up)
+            ds = build_from_uploads(tuple((n_, len(b_), hash(b_[:65536]), hash(b_[-65536:])) for n_, b_ in _pitch_up), _pitch_up)
         except Exception as _e:
             st.error(T("upload_error", lang=lang, err=str(_e)))
             st.stop()
-        _seasons_sel = sorted(int(x) for x in raw_df["season"].unique())
     elif _pitch_repo:
-        raw_df, data_source = load_pitch_paths(tuple((f["path"], f["mtime"], f["size"]) for f in _pitch_repo))
-        _seasons_sel = sorted(int(x) for x in raw_df["season"].unique())
+        ds = build_from_paths(tuple((f["path"], f["mtime"], f["size"]) for f in _pitch_repo))
     else:
-        raw_df, data_source = load_data(tuple(sorted(_seasons_sel)), use_live=_use_live, live_days_back=_live_days)
+        ds = build_from_default(tuple(sorted(_seasons_sel)), _use_live, _live_days)
+data_source, pc = ds["source"], ds["pc"]
+meta = pc["meta"]
+if _pitch_up or _pitch_repo:
+    _seasons_sel = list(meta["seasons"])
 
 _bat_items = (tuple((f["name"], f["kind"], f["path"], f["mtime"], None) for f in _repo_files if f["kind"] in ("bat_players", "bat_zone"))
               + tuple((n_, k, None, 0, b_) for (n_, b_), k in zip(_up_items, _up_kinds) if k in ("bat_players", "bat_zone")))
@@ -154,17 +208,18 @@ _has_bat = bool(bat_data and (not bat_data["players"].empty or not bat_data["zon
 _all_files = list(_repo_files) + [{"name": n_, "kind": k, "where": "upload"} for (n_, _b), k in zip(_up_items, _up_kinds)]
 render_data_panel(lang, _all_files, data_source)
 render_demo_banner(lang, _all_files, data_source)
-_data_key = f"{data_source}|{len(raw_df)}|{raw_df['game_date'].max()}"
+_data_key = f"{data_source}|{meta['n_rows']}|{meta['max_date']}"
 
-raw_df["game_date"] = pd.to_datetime(raw_df["game_date"])
 
-filters = SidebarFilters(raw_df, lang=lang, seasons_override=_seasons_sel)
+_sb_stub = pd.DataFrame({"game_date": pd.Series([meta["min_date"], meta["max_date"]]),
+                         "pitcher_name": pd.Series(meta["pitchers"], dtype=object),
+                         "batter_name": pd.Series(meta["batters"], dtype=object),
+                         "pitch_type": pd.Series(meta["pitch_types"], dtype=object)})
+filters = SidebarFilters(_sb_stub, lang=lang, seasons_override=_seasons_sel)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PRECOMPUTE
 # ─────────────────────────────────────────────────────────────────────────────
-with st.spinner("📊 …"):
-    pc = precompute_all(raw_df)
 
 bw_all   = pc["batter_weekly"]
 bd_all   = pc["batter_delta"]
@@ -177,7 +232,7 @@ season_str = ", ".join(str(y) for y in sorted(filters.seasons))
 if data_source in ("parquet", "syntetyczne"):
     _source_label = {"parquet": T("source_parquet", lang=lang), "syntetyczne": T("source_synthetic", lang=lang)}[data_source]
 elif data_source in ("upload", "files"):
-    _source_label = T("source_upload" if data_source == "upload" else "source_files", lang=lang) + f" {raw_df['game_date'].min().date()} → {raw_df['game_date'].max().date()}"
+    _source_label = T("source_upload" if data_source == "upload" else "source_files", lang=lang) + f" {meta['min_date'].date()} → {meta['max_date'].date()}"
 elif "Statcast" in data_source:
     # data_source looks like "Statcast (live, 2026-08-15 to 2026-08-29)" — show the
     # actual fetched window as-is so it's clear exactly how current the data is,
@@ -199,21 +254,9 @@ st.markdown("")
 #  FILTROWANIE
 # ─────────────────────────────────────────────────────────────────────────────
 _tf = _time.perf_counter()
-
-bw = filter_batter_weekly(bw_all, filters.d_start, filters.d_end, filters.sel_batters, filters.seasons)
-bd = filter_batter_delta(bd_all, filters.d_start, filters.d_end, filters.sel_batters, filters.seasons,
-                          filters.min_pitches, filters.min_prev)
-mw = filter_matchup_weekly(mw_all, filters.d_start, filters.d_end,
-                            filters.sel_pitchers, filters.sel_batters, filters.sel_pt, filters.seasons)
-md = filter_matchup_delta(md_all, filters.d_start, filters.d_end,
-                           filters.sel_pitchers, filters.sel_batters, filters.sel_pt, filters.seasons,
-                           filters.min_pitches, filters.min_prev)
-velo = filter_velo_weekly(velo_all, filters.d_start, filters.d_end, filters.sel_batters)
-# v6.3: league-wide view (ignores the sidebar batter search filter) so the Player
-# Report "did you know" claim can be checked against the WHOLE league, not just
-# whichever batters happen to be selected in the sidebar right now.
-bd_league = filter_batter_delta(bd_all, filters.d_start, filters.d_end, [], filters.seasons,
-                                 filters.min_pitches, filters.min_prev)
+_F = filtered_tables(pc, _data_key, filters.d_start, filters.d_end, tuple(filters.sel_batters), tuple(filters.sel_pitchers),
+                     tuple(filters.sel_pt), tuple(filters.seasons), filters.min_pitches, filters.min_prev)
+bw, bd, mw, md, velo, bd_league = _F["bw"], _F["bd"], _F["mw"], _F["md"], _F["velo"], _F["bd_league"]
 _tf_ms = round((_time.perf_counter() - _tf) * 1000, 1)
 
 if bw.empty and mw.empty:
@@ -224,9 +267,9 @@ if bw.empty and mw.empty:
 #  GLOBAL KPIs
 # ─────────────────────────────────────────────────────────────────────────────
 n_batters_f  = bw["batter_name"].nunique()
-n_pitchers_f = mw["pitcher_name"].nunique() if not mw.empty else 0
+n_pitchers_f = _F["n_pitchers"]
 n_pitches_f  = int(bw["total"].sum()) if not bw.empty else 0
-n_matchups_f = mw.groupby(["pitcher_name", "batter_name"]).ngroups if not mw.empty else 0
+n_matchups_f = _F["n_matchups"]
 n_weeks_f    = bw["week_start"].nunique() if not bw.empty else 0
 avg_adj      = round(bd["adj_score"].mean(), 1) if not bd.empty else 0
 
@@ -243,7 +286,7 @@ render_kpis([
 # ─────────────────────────────────────────────────────────────────────────────
 #  TABY
 # ─────────────────────────────────────────────────────────────────────────────
-ai_ctx = AIContext(bd_league=bd_league, bw_all=bw_all, raw_df=raw_df, data_source=data_source, lang=lang, cfg=ai_cfg)
+ai_ctx = AIContext(bd_league=bd_league, bw_all=bw_all, pc=pc, data_source=data_source, lang=lang, cfg=ai_cfg)
 
 _VIEWS = ["profile", "report", "velo", "compare", "changes", "matchup", "ranking", "team", "period", "wbw", "bat", "chat"]
 _VIEW_LABELS = {"profile": T("tab_profile", lang=lang), "report": T("tab_report", lang=lang), "velo": T("tab_velo", lang=lang),
@@ -843,7 +886,7 @@ if _view == "period":
 
             min_pitches_period = st.slider(T("period_min_pitches", lang=lang), 5, 200, 30, key="period_min_pitches")
 
-            comp = cached_period_comparison(raw_df, bw_all, _data_key, tuple(weeks_p1), tuple(weeks_p2), min_pitches_period)
+            comp = cached_period_comparison(bw_all, pc["week_extra"], _data_key, tuple(weeks_p1), tuple(weeks_p2), min_pitches_period)
 
             if comp.empty:
                 empty(T("period_empty", lang=lang))

@@ -23,7 +23,7 @@ class AIConfig:
 class AIContext:
     bd_league: Any
     bw_all: Any
-    raw_df: Any
+    pc: Any
     data_source: str
     lang: str
     cfg: AIConfig
@@ -145,7 +145,7 @@ def render_ai_chat(ctx: AIContext) -> None:
         try:
             with st.spinner(T("ai_generating", lang=ctx.lang)):
                 client = ai_client.make_client(ctx.cfg.api_key)
-                runner = lambda name, args: eng.run_tool(name, args, ctx.bd_league, ctx.bw_all, ctx.raw_df, ctx.data_source)
+                runner = lambda name, args: eng.run_tool(name, args, ctx.bd_league, ctx.bw_all, ctx.pc, ctx.data_source)
                 text, used = ai_client.chat(client, ctx.cfg.model, ai_client.build_system(ctx.lang, chat=True),
                                             hist, q, eng.TOOLS, runner)
             st.markdown(text)

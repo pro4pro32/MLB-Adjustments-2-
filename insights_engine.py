@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from config import ALL_CATEGORIES, ALL_ZONES, CAT_COLS, PITCH_CAT_COLS, ZONE_CAT_COLS
-from compute import (adjustments_vs_ops, compute_period_comparison, compute_period_correlations,
+from compute import (adjustments_vs_ops, compute_period_comparison_agg, compute_period_correlations,
                      sustained_movers_leaderboard, weekly_top_pct_counts)
 
 
@@ -449,7 +449,7 @@ def _ts(s):
     return pd.Timestamp(str(s)).normalize()
 
 
-def run_tool(name, args, bd, bw_all, raw_df, data_source="") -> dict:
+def run_tool(name, args, bd, bw_all, pc, data_source="") -> dict:
     """Execute one chat tool on the loaded data. Never raises; always returns compact JSON-safe data."""
     try:
         args = args or {}
@@ -501,7 +501,7 @@ def run_tool(name, args, bd, bw_all, raw_df, data_source="") -> dict:
             if not w1 or not w2:
                 return {"error": "A period contains no weeks. Call list_weeks and use week_start dates."}
             minp = max(5, int(args.get("min_pitches", 30)))
-            comp = compute_period_comparison(raw_df, bw_all, w1, w2, min_pitches=minp)
+            comp = compute_period_comparison_agg(bw_all, pc["week_extra"], w1, w2, min_pitches=minp)
             if comp.empty:
                 return {"error": "No batters pass the min_pitches filter for both periods."}
             labels = dict(D_LABEL, d_ops="OPS", d_obp="OBP", d_slg="SLG", d_velo="Velo")

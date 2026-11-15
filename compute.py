@@ -43,7 +43,7 @@ def _cat_key(col: str) -> str:
 
 def _compute_batter_weekly(df: pd.DataFrame) -> pd.DataFrame:
     """Agreguje WSZYSTKICH pitcherów → tygodniowy pitch mix DO danego battera."""
-    d = df.copy()
+    d = df[[c for c in ('game_date', 'batter_name', 'batter_team', 'pitch_type', 'zone', 'season') if c in df.columns]].copy()
     d["week_start"] = floor_to_monday(d["game_date"])
 
     base = (
@@ -184,7 +184,7 @@ def _compute_batter_outcomes_weekly(df: pd.DataFrame) -> pd.DataFrame:
     outcomes), średnia exit velo. Łączone z pitch-mix żeby zobaczyć czy zmiana
     podejścia pitcherów faktycznie coś dała.
     """
-    d = df.copy()
+    d = df[[c for c in ('game_date', 'batter_name', 'swing', 'whiff', 'in_play', 'exit_velo', 'hit') if c in df.columns]].copy()
     d["week_start"] = floor_to_monday(d["game_date"])
 
     swings = d[d["swing"]]
@@ -215,7 +215,7 @@ def _compute_batter_context_weekly(df: pd.DataFrame) -> pd.DataFrame:
     wynikać z tego że batter zobaczył innych pitcherów / inne sytuacje, a nie
     z faktycznego 'adjustmentu').
     """
-    d = df.copy()
+    d = df[[c for c in ('game_date', 'batter_name', 'p_throws', 'two_strike') if c in df.columns]].copy()
     d["week_start"] = floor_to_monday(d["game_date"])
 
     tot = d.groupby(["batter_name", "week_start"]).size().reset_index(name="n_total_ctx")
@@ -242,7 +242,7 @@ def _compute_batter_context_weekly(df: pd.DataFrame) -> pd.DataFrame:
 
 def _compute_velo_weekly(df: pd.DataFrame) -> pd.DataFrame:
     """Średnia release_speed per batter × tydzień × pitch_type + delta."""
-    d = df.copy()
+    d = df[[c for c in ('game_date', 'batter_name', 'pitch_type', 'release_speed') if c in df.columns]].copy()
     d["week_start"] = floor_to_monday(d["game_date"])
     d = d.dropna(subset=["release_speed"])
 
@@ -265,7 +265,7 @@ def _compute_velo_weekly(df: pd.DataFrame) -> pd.DataFrame:
 #  4.  MATCHUP-LEVEL  (pitcher × batter) — bez zmian, nadal per pitch_type
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _compute_weekly_ops(df: pd.DataFrame) -> pd.DataFrame:
+def _compute_weekly_ops(df: pd.DataFrame, with_components: bool = False) -> pd.DataFrame:
     """v7.0: per batter x week OPS from real plate-appearance-ending events + previous observed week."""
     if "is_pa_end" not in df.columns or "pa_event" not in df.columns:
         return pd.DataFrame()
@@ -296,11 +296,59 @@ def _compute_weekly_ops(df: pd.DataFrame) -> pd.DataFrame:
     g.loc[far, ["ops_wk_prev", "pa_wk_prev"]] = np.nan
     g["d_ops_wk"] = (g["ops_wk"] - g["ops_wk_prev"]).round(3)
     g = g.rename(columns={"pa": "pa_wk"})
+    if with_components:
+        return g
     return g[["batter_name", "week_start", "pa_wk", "obp_wk", "slg_wk", "ops_wk", "ops_wk_prev", "pa_wk_prev", "d_ops_wk"]]
 
 
+WEEKLY_OPS_COLS = ["batter_name", "week_start", "pa_wk", "obp_wk", "slg_wk", "ops_wk", "ops_wk_prev", "pa_wk_prev", "d_ops_wk"]
+
+
+def _compute_week_extra(df: pd.DataFrame, ops_full) -> dict:
+    """v7.3: small per batter-week tables (velocity sums, team counts, OPS components) so a Period-1-vs-Period-2
+    comparison can be computed WITHOUT keeping the ~700k-row raw pitch table in memory."""
+    cols = [c for c in ("batter_name", "game_date", "release_speed", "batter_team") if c in df.columns]
+    d = df[cols].copy()
+    d["week_start"] = floor_to_monday(d["game_date"])
+    if "release_speed" in d.columns:
+        d["release_speed"] = d["release_speed"].astype("float64")
+        v = (d.dropna(subset=["release_speed"]).groupby(["batter_name", "week_start"])
+              .agg(velo_sum=("release_speed", "sum"), velo_n=("release_speed", "size")).reset_index())
+    else:
+        v = pd.DataFrame(columns=["batter_name", "week_start", "velo_sum", "velo_n"])
+    if "batter_team" in d.columns:
+        t = d.dropna(subset=["batter_team"]).groupby(["batter_name", "week_start", "batter_team"]).size().reset_index(name="n")
+    else:
+        t = pd.DataFrame(columns=["batter_name", "week_start", "batter_team", "n"])
+    ops_cols = ["batter_name", "week_start", "pa_wk", "bb", "hbp", "sf", "s1", "s2", "s3", "hr"]
+    o = ops_full[ops_cols].copy() if (ops_full is not None and len(ops_full)) else pd.DataFrame(columns=ops_cols)
+    return {"velo": v, "team": t, "ops": o}
+
+
+def _dataset_meta(df: pd.DataFrame) -> dict:
+    return {"pitchers": [str(x) for x in sorted(df["pitcher_name"].dropna().unique())],
+            "batters": [str(x) for x in sorted(df["batter_name"].dropna().unique())],
+            "pitch_types": [str(x) for x in sorted(df["pitch_type"].dropna().unique())],
+            "min_date": pd.Timestamp(df["game_date"].min()), "max_date": pd.Timestamp(df["game_date"].max()),
+            "n_rows": int(len(df)), "seasons": sorted(int(x) for x in df["season"].unique())}
+
+
+def _shrink_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Same content, smaller types: drop the python-object `week_date` column and downcast numbers."""
+    if df is None or df.empty:
+        return df
+    df = df.drop(columns=[c for c in ("week_date",) if c in df.columns])
+    for c in df.columns:
+        k = df[c].dtype.kind
+        if k == "i":
+            df[c] = pd.to_numeric(df[c], downcast="integer")
+        elif k == "f":
+            df[c] = pd.to_numeric(df[c], downcast="float")
+    return df
+
+
 def _compute_matchup_weekly(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.copy()
+    d = df[[c for c in ('game_date', 'pitcher_name', 'batter_name', 'pitch_type', 'season') if c in df.columns]].copy()
     d["week_start"] = floor_to_monday(d["game_date"])
 
     grp = (
@@ -343,8 +391,7 @@ def _compute_matchup_deltas(mw: pd.DataFrame) -> pd.DataFrame:
 #  5.  GŁÓWNA FUNKCJA CACHE
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(show_spinner=False, max_entries=8)
-def precompute_all(df: pd.DataFrame) -> dict[str, Any]:
+def precompute_all_impl(df: pd.DataFrame) -> dict[str, Any]:
     t0 = time.perf_counter()
 
     bw = _compute_batter_weekly(df)
@@ -364,18 +411,22 @@ def precompute_all(df: pd.DataFrame) -> dict[str, Any]:
         on=["batter_name", "week_start"], how="left",
     )
 
-    weekly_ops = _compute_weekly_ops(df)
-    if not weekly_ops.empty:
-        bd = bd.merge(weekly_ops, on=["batter_name", "week_start"], how="left")
+    ops_full = _compute_weekly_ops(df, with_components=True)
+    week_extra = _compute_week_extra(df, ops_full)
+    if ops_full is not None and not ops_full.empty:
+        bd = bd.merge(ops_full[WEEKLY_OPS_COLS], on=["batter_name", "week_start"], how="left")
+    del ops_full
+    meta = _dataset_meta(df)
 
     perf_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "batter_weekly":  bw,
         "batter_delta":   bd,
-        "matchup_weekly": mw,
+        "matchup_weekly": _shrink_frame(mw),
         "matchup_delta":  md,
-        "velo_weekly":    velo,
-        "perf_ms":        perf_ms,
+        "velo_weekly": _shrink_frame(velo),
+        "perf_ms": perf_ms,
+        "week_extra": week_extra, "meta": meta,
     }
 
 
@@ -384,22 +435,14 @@ def precompute_all(df: pd.DataFrame) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def filter_batter_weekly(bw, d_start, d_end, sel_batters, sel_seasons):
-    col = "week_date" if "week_date" in bw.columns else None
-    if col:
-        m = (bw[col] >= d_start) & (bw[col] <= d_end)
-    else:
-        m = (bw["week_start"].dt.date >= d_start) & (bw["week_start"].dt.date <= d_end)
+    m = (bw["week_start"] >= pd.Timestamp(d_start)) & (bw["week_start"] <= pd.Timestamp(d_end))
     if sel_batters:  m &= bw["batter_name"].isin(sel_batters)
     if sel_seasons:  m &= bw["season"].isin(sel_seasons)
-    return bw[m].copy()
+    return bw if bool(m.all()) else bw[m]   # no-op filter -> share, don't copy
 
 
 def filter_batter_delta(bd, d_start, d_end, sel_batters, sel_seasons, min_pitches, min_prev):
-    col = "week_date" if "week_date" in bd.columns else None
-    if col:
-        m = (bd[col] >= d_start) & (bd[col] <= d_end)
-    else:
-        m = (bd["week_start"].dt.date >= d_start) & (bd["week_start"].dt.date <= d_end)
+    m = (bd["week_start"] >= pd.Timestamp(d_start)) & (bd["week_start"] <= pd.Timestamp(d_end))
     m &= (bd["total"] >= min_pitches) & (bd["total_prev"] >= min_prev)
     if sel_batters: m &= bd["batter_name"].isin(sel_batters)
     if sel_seasons: m &= bd["season"].isin(sel_seasons)
@@ -407,24 +450,16 @@ def filter_batter_delta(bd, d_start, d_end, sel_batters, sel_seasons, min_pitche
 
 
 def filter_matchup_weekly(mw, d_start, d_end, sel_pitchers, sel_batters, sel_pt, sel_seasons):
-    col = "week_date" if "week_date" in mw.columns else None
-    if col:
-        m = (mw[col] >= d_start) & (mw[col] <= d_end)
-    else:
-        m = (mw["week_start"].dt.date >= d_start) & (mw["week_start"].dt.date <= d_end)
+    m = (mw["week_start"] >= pd.Timestamp(d_start)) & (mw["week_start"] <= pd.Timestamp(d_end))
     if sel_pitchers: m &= mw["pitcher_name"].isin(sel_pitchers)
     if sel_batters:  m &= mw["batter_name"].isin(sel_batters)
     if sel_pt:       m &= mw["pitch_type"].isin(sel_pt)
     if sel_seasons:  m &= mw["season"].isin(sel_seasons)
-    return mw[m].copy()
+    return mw if bool(m.all()) else mw[m]   # no-op filter -> share, don't copy
 
 
 def filter_matchup_delta(md, d_start, d_end, sel_pitchers, sel_batters, sel_pt, sel_seasons, min_pitches, min_prev):
-    col = "week_date" if "week_date" in md.columns else None
-    if col:
-        m = (md[col] >= d_start) & (md[col] <= d_end)
-    else:
-        m = (md["week_start"].dt.date >= d_start) & (md["week_start"].dt.date <= d_end)
+    m = (md["week_start"] >= pd.Timestamp(d_start)) & (md["week_start"] <= pd.Timestamp(d_end))
     m &= (md["Pitches"] >= min_pitches) & (md["Prev Pitches"] >= min_prev)
     if sel_pitchers: m &= md["Pitcher"].isin(sel_pitchers)
     if sel_batters:  m &= md["Batter"].isin(sel_batters)
@@ -434,13 +469,9 @@ def filter_matchup_delta(md, d_start, d_end, sel_pitchers, sel_batters, sel_pt, 
 
 
 def filter_velo_weekly(velo, d_start, d_end, sel_batters, sel_seasons=None):
-    col = "week_date" if "week_date" in velo.columns else None
-    if col:
-        m = (velo[col] >= d_start) & (velo[col] <= d_end)
-    else:
-        m = (velo["week_start"].dt.date >= d_start) & (velo["week_start"].dt.date <= d_end)
+    m = (velo["week_start"] >= pd.Timestamp(d_start)) & (velo["week_start"] <= pd.Timestamp(d_end))
     if sel_batters: m &= velo["batter_name"].isin(sel_batters)
-    return velo[m].copy()
+    return velo if bool(m.all()) else velo[m]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -820,6 +851,86 @@ def compute_period_correlations(comp: pd.DataFrame, delta_cols: list[str]) -> pd
     return sub.corr(method="pearson").round(2)
 
 
+def compute_period_comparison_agg(bw: pd.DataFrame, wx: dict, weeks_p1: list, weeks_p2: list,
+                                  min_pitches: int = 1) -> pd.DataFrame:
+    """Same result as compute_period_comparison(), but built only from batter-weekly counts and the small
+    per batter-week tables in `wx` — the raw pitch table is not needed (and not kept in memory)."""
+    n_cols = [f"n_{_cat_key(c)}" for c in CAT_COLS]
+
+    def agg_period(weeks):
+        sub = bw[bw["week_start"].isin(weeks)]
+        if sub.empty:
+            return pd.DataFrame(columns=["batter_name", "total"] + CAT_COLS)
+        g = sub.groupby("batter_name").agg(total=("total", "sum"), **{nc: (nc, "sum") for nc in n_cols}).reset_index()
+        for c in CAT_COLS:
+            g[c] = (g[f"n_{_cat_key(c)}"] / g["total"].replace(0, np.nan) * 100).round(1)
+        return g[["batter_name", "total"] + CAT_COLS]
+
+    p1 = agg_period(weeks_p1).add_suffix("_p1").rename(columns={"batter_name_p1": "batter_name"})
+    p2 = agg_period(weeks_p2).add_suffix("_p2").rename(columns={"batter_name_p2": "batter_name"})
+    if p1.empty or p2.empty:
+        return pd.DataFrame()
+    merged = p1.merge(p2, on="batter_name", how="inner")
+    if merged.empty:
+        return merged
+
+    def team_for(weeks) -> pd.Series:
+        t = wx["team"]
+        sub = t[t["week_start"].isin(weeks)]
+        if sub.empty:
+            return pd.Series(dtype=object)
+        g = sub.groupby(["batter_name", "batter_team"], as_index=False)["n"].sum()
+        g = g.sort_values(["batter_name", "n", "batter_team"], ascending=[True, False, True]).drop_duplicates("batter_name")
+        return g.set_index("batter_name")["batter_team"]
+
+    merged = (merged.merge(team_for(weeks_p1).rename("team_p1"), on="batter_name", how="left")
+                    .merge(team_for(weeks_p2).rename("team_p2"), on="batter_name", how="left"))
+    merged["team_p1"] = merged["team_p1"].fillna(merged["batter_name"].map(TEAM_OF_BATTER)).fillna("Unknown")
+    merged["team_p2"] = merged["team_p2"].fillna(merged["batter_name"].map(TEAM_OF_BATTER)).fillna("Unknown")
+    merged["team"] = np.where(merged["team_p1"] == merged["team_p2"], merged["team_p1"],
+                              merged["team_p1"] + " / " + merged["team_p2"])
+
+    def velo_for(weeks, name) -> pd.Series:
+        v = wx["velo"]
+        sub = v[v["week_start"].isin(weeks)]
+        g = sub.groupby("batter_name")[["velo_sum", "velo_n"]].sum()
+        return (g["velo_sum"] / g["velo_n"].replace(0, np.nan)).rename(name)
+
+    merged = (merged.merge(velo_for(weeks_p1, "avg_velo_p1"), on="batter_name", how="left")
+                    .merge(velo_for(weeks_p2, "avg_velo_p2"), on="batter_name", how="left"))
+    merged["avg_velo_p1"] = merged["avg_velo_p1"].round(1)
+    merged["avg_velo_p2"] = merged["avg_velo_p2"].round(1)
+    merged["d_velo"] = (merged["avg_velo_p2"] - merged["avg_velo_p1"]).round(1)
+    for c in CAT_COLS:
+        key = _cat_key(c)
+        merged[f"d_{key}"] = (merged[f"{c}_p2"] - merged[f"{c}_p1"]).round(1)
+
+    def ops_for(weeks) -> pd.DataFrame:
+        o = wx["ops"]
+        sub = o[o["week_start"].isin(weeks)]
+        if sub.empty:
+            return pd.DataFrame(columns=["batter_name", "pa", "obp", "slg", "ops"])
+        g = sub.groupby("batter_name")[["pa_wk", "bb", "hbp", "sf", "s1", "s2", "s3", "hr"]].sum()
+        h = g["s1"] + g["s2"] + g["s3"] + g["hr"]
+        ab = g["pa_wk"] - g["bb"] - g["hbp"] - g["sf"]
+        tb = g["s1"] + 2 * g["s2"] + 3 * g["s3"] + 4 * g["hr"]
+        den = ab + g["bb"] + g["hbp"] + g["sf"]
+        obp = pd.Series(np.where(den > 0, (h + g["bb"] + g["hbp"]) / den.replace(0, np.nan), np.nan), index=g.index).round(3)
+        slg = pd.Series(np.where(ab > 0, tb / ab.replace(0, np.nan), np.nan), index=g.index).round(3)
+        out = pd.DataFrame({"batter_name": g.index, "pa": g["pa_wk"].to_numpy(), "obp": obp.to_numpy(), "slg": slg.to_numpy()})
+        out["ops"] = (out["obp"] + out["slg"]).round(3)
+        return out
+
+    ops1 = ops_for(weeks_p1).add_suffix("_p1").rename(columns={"batter_name_p1": "batter_name"})
+    ops2 = ops_for(weeks_p2).add_suffix("_p2").rename(columns={"batter_name_p2": "batter_name"})
+    merged = merged.merge(ops1, on="batter_name", how="left").merge(ops2, on="batter_name", how="left")
+    merged["d_ops"] = (merged["ops_p2"] - merged["ops_p1"]).round(3)
+    merged["d_obp"] = (merged["obp_p2"] - merged["obp_p1"]).round(3)
+    merged["d_slg"] = (merged["slg_p2"] - merged["slg_p1"]).round(3)
+    merged = merged[(merged["total_p1"] >= min_pitches) & (merged["total_p2"] >= min_pitches)]
+    return merged.reset_index(drop=True)
+
+
 def _compute_ops_for_period(d: pd.DataFrame, weeks: list) -> pd.DataFrame:
     """Aggregates OBP/SLG/OPS per batter for one period from real PA-ending events.
     `d` must already have a `week_start` column (see compute_period_comparison)."""
@@ -978,3 +1089,6 @@ def generate_batter_insights(bd_batter: pd.DataFrame, batter: str, lang: str = "
                 insights.append(T("insight_whiff_change", lang=lang, verb=verb, delta=d_whiff))
 
     return insights[:5]
+
+
+precompute_all = st.cache_data(show_spinner=False, max_entries=2)(precompute_all_impl)

@@ -1177,6 +1177,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "bat_leader_speed": {"en": "Fastest bat speed", "pl": "Najszybszy kij", "fr": "Batte la plus rapide", "es": "Bate más rápido", "ja": "最速バット"},
     "bat_leader_xwoba": {"en": "Best xwOBA", "pl": "Najlepsze xwOBA", "fr": "Meilleur xwOBA", "es": "Mejor xwOBA", "ja": "最高xwOBA"},
     "bat_scatter_title": {"en": "Bat speed vs xwOBA (each dot = one hitter)", "pl": "Prędkość kija vs xwOBA (każda kropka = pałkarz)", "fr": "Vitesse de batte vs xwOBA (chaque point = un frappeur)", "es": "Velocidad del bate vs xwOBA (cada punto = un bateador)", "ja": "バット速度対xwOBA（各点＝打者）"},
+    "season_memory_note": {"en": "Every season kept in memory adds roughly 300–400 MB. On a small host analyze one season at a time.",
+                            "pl": "Każdy sezon trzymany w pamięci to ok. 300–400 MB. Na małym hostingu analizuj jeden sezon naraz.",
+                            "fr": "Chaque saison gardée en mémoire ajoute environ 300–400 Mo. Sur un petit hébergement, analysez une saison à la fois.",
+                            "es": "Cada temporada en memoria añade unos 300–400 MB. En un alojamiento pequeño analiza una temporada a la vez.",
+                            "ja": "メモリに保持するシーズンごとに約300〜400MB増えます。小さなホスティングでは1シーズンずつ分析してください。"},
     "period_n_batters": {"en": "Batters shown", "pl": "Pokazanych batterów", "fr": "Frappeurs affichés",
                            "es": "Bateadores mostrados", "ja": "表示中の打者数"},
     "period_os_clarify": {
